@@ -39,6 +39,7 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&sleeping_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -103,14 +104,14 @@ void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks();
-  ASSERT (intr_get_level == INTR_ON);
+  ASSERT (intr_get_level() == INTR_ON);
 
   enum intr_level old_level = intr_disable();
 
   struct thread *current_thread = thread_current();
   current_thread->tick_to_wake = start + ticks;
   list_push_back(&sleeping_list, &current_thread->sleep_elem);
-  list_sort(&sleeping_list, (list_less_func *) &compare_wake_time, NULL);
+  list_sort(&sleeping_list, (list_less_func*)compare_wake_time, NULL);
   thread_block();
   intr_set_level(old_level);
 }
@@ -190,6 +191,17 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  while (!list_empty(&sleeping_list)) 
+  {
+    struct list_elem *first_elem = list_front(&sleeping_list);
+    struct thread *t = list_entry(first_elem, struct thread, sleep_elem);
+    
+    if (timer_ticks() < t->tick_to_wake)
+      break;
+      
+    list_pop_front(&sleeping_list);  
+    thread_unblock(t);                
+  }
   thread_tick ();
 }
 
