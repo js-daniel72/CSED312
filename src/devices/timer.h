@@ -13,6 +13,9 @@ void timer_calibrate (void);
 int64_t timer_ticks (void);
 int64_t timer_elapsed (int64_t);
 
+bool compare_wake_time(const struct list_elem *a, const struct list_elem *b,
+                             void *aux);
+
 /* Sleep and yield the CPU to other threads. */
 void timer_sleep (int64_t ticks);
 void timer_msleep (int64_t milliseconds);

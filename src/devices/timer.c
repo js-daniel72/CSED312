@@ -30,6 +30,8 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+static struct list sleeping_list;  /* Store the list of threads that is currently sleeping */
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -84,16 +86,33 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/* Use to sort a sleeping_list based on tick_to_wake */
+bool
+compare_wake_time(const struct list_elem *a, const struct list_elem *b,
+                          void *aux)
+{
+  struct thread *thread_a = list_entry(a, struct thread, sleep_elem);
+  struct thread *thread_b = list_entry(b, struct thread, sleep_elem);
+  return (thread_a->tick_to_wake) < (thread_b->tick_to_wake);
+}
+
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  int64_t start = timer_ticks();
+  ASSERT (intr_get_level == INTR_ON);
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  enum intr_level old_level = intr_disable();
+
+  struct thread *current_thread = thread_current();
+  current_thread->tick_to_wake = start + ticks;
+  list_push_back(&sleeping_list, &current_thread->sleep_elem);
+  list_sort(&sleeping_list, (list_less_func *) &compare_wake_time, NULL);
+  thread_block();
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
