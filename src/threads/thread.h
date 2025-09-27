@@ -92,7 +92,9 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    
     int64_t tick_to_wake;               /* What time(tick) should this thread wake up? */
+    struct list_elem sleep_elem;        /* List element for sleeping list */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
