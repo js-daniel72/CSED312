@@ -382,7 +382,6 @@ thread_update_effective_priority (struct thread *t)
   t->effective_priority = max_pri;
 
   // Reorder ready lists and wait lists
-  // (do we need to consider other cases like semaphores and monitors?)
   if (t->status == THREAD_READY) {
     list_remove (&t->elem);
     list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
@@ -391,6 +390,10 @@ thread_update_effective_priority (struct thread *t)
     struct semaphore *sem = &t->waiting_lock->semaphore;
     list_remove (&t->elem);
     list_insert_ordered (&sem->waiters, &t->elem, compare_effective_priority, NULL);
+  }
+  else if (t->waiting_sema != NULL) {
+    list_remove (&t->elem);
+    list_insert_ordered (&t->waiting_sema->waiters, &t->elem, compare_effective_priority, NULL);
   }
 
   // Propogate the donation through the lock chain

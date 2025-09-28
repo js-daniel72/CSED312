@@ -90,7 +90,8 @@ struct thread
     int priority;                       /* Priority. */
     int effective_priority;             /* Effective priority, which is the maximum of its own priority and the donated priorities. */
     struct lock *waiting_lock;          /* The address of lock that the thread is waiting for. */
-    struct list locks_holding;          /* The lists of locks the thread is holding. Used for priority donation calculation. */
+    struct semaphore *waiting_sema;     /* The address of semaphore that the thread is waiting for. */
+    struct list locks_holding;          /* The list of locks the thread is holding. Used for priority donation calculation. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
