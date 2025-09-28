@@ -384,24 +384,21 @@ thread_update_effective_priority (struct thread *t)
   t->effective_priority = max_pri;
 
   // Reorder ready lists and wait lists
+  // (do we need to consider other cases like semaphores and monitors?)
   if (t->status == THREAD_READY) {
     list_remove (&t->elem);
     list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
   }
+  else if (t->waiting_lock != NULL) {
+    struct semaphore *sem = &t->waiting_lock->semaphore;
+    list_remove (&t->elem);
+    list_insert_ordered (&sem->waiters, &t->elem, compare_effective_priority, NULL);
+  }
 
   // Propogate the donation through the lock chain
-  if (t->effective_priority > old_eff) {
-    struct thread *cur = t;
-    while (cur->waiting_lock && cur->waiting_lock->holder) {
-      struct thread *holder = cur->waiting_lock->holder;
-
-      int holder_old = holder->effective_priority;
-      thread_update_effective_priority (holder);
-
-      if (holder->effective_priority <= holder_old)
-        break;
-      cur = holder;
-    }
+  if (t->effective_priority > old_eff && t->waiting_lock != NULL) {
+    struct thread *holder = t->waiting_lock->holder;
+    thread_update_effective_priority (holder);
   }
 
   intr_set_level (old_level);
@@ -409,7 +406,7 @@ thread_update_effective_priority (struct thread *t)
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
-thread_set_priority (int new_priority) 
+thread_set_priority (int new_priority)
 {
   enum intr_level old_level = intr_disable ();
   
