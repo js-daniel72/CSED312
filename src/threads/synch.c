@@ -293,6 +293,7 @@ struct semaphore_elem
   {
     struct list_elem elem;              /* List element. */
     struct semaphore semaphore;         /* This semaphore. */
+    struct thread *thread;              /* The thread that waits on the semaphore. */
   };
 
 /* Initializes condition variable COND.  A condition variable
@@ -337,11 +338,30 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
   
   sema_init (&waiter.semaphore, 0);
-  list_insert_ordered (&cond->waiters, &waiter.elem, compare_effective_priority, NULL);
+  waiter.thread = thread_current ();
+  list_insert_ordered (&cond->waiters, &waiter.elem, compare_waiter_priority, NULL);
   lock_release (lock);
+
+  // This sema part makes the thread go to sleep.
+  // A cond_signal will increase ONE of the semaphores in the list,
+  // waking that thread up.
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
 }
+
+bool
+compare_waiter_priority (const struct list_elem *a,
+                         const struct list_elem *b,
+                         void *aux)
+  {
+    const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
+    const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
+    int ea = sa->thread->effective_priority;
+    int eb = sb->thread->effective_priority;
+    if (ea != eb)
+      return ea > eb;
+    return false;
+  }
 
 /* If any threads are waiting on COND (protected by LOCK), then
    this function signals one of them to wake up from its wait.
