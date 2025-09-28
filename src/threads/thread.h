@@ -88,6 +88,9 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int effective_priority;             /* Effective priority, which is the maximum of its own priority and the donated priorities. */
+    struct lock *waiting_lock;          /* The address of lock that the thread is waiting for. */
+    struct list locks_holding;          /* The lists of locks the thread is holding. Used for priority donation calculation. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -132,6 +135,7 @@ void thread_yield (void);
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
+
 
 int thread_get_priority (void);
 void thread_set_priority (int);

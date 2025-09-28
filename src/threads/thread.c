@@ -331,6 +331,14 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+
+/*                     */
+/* Priority Scheduling */
+/*                     */
+
+
+
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
@@ -344,6 +352,16 @@ thread_get_priority (void)
 {
   return thread_current ()->priority;
 }
+
+
+
+
+
+
+
+
+
+
 
 /* Sets the current thread's nice value to NICE. */
 void
@@ -462,6 +480,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->effective_priority = priority;
+  list_init (&t->locks_holding);
+  t->waiting_lock = NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
