@@ -237,9 +237,12 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+
+
   list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
   t->status = THREAD_READY;
-  intr_set_level (old_level);
+
+  yield_if_we_should ();  
 }
 
 /* Returns the name of the running thread. */
@@ -404,7 +407,6 @@ thread_update_effective_priority (struct thread *t)
   intr_set_level (old_level);
 }
 
-
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
@@ -415,7 +417,24 @@ thread_set_priority (int new_priority)
   cur->priority = new_priority;
   thread_update_effective_priority(cur);
 
-  intr_set_level (old_level);
+  yield_if_we_should();
+}
+
+void
+yield_if_we_should (void)
+{
+  enum intr_level old = intr_disable ();
+  bool should_yield;
+
+  if (!list_empty (&ready_list)) {
+    struct thread *cur = thread_current ();
+    struct thread *top = list_entry (list_front (&ready_list), struct thread, elem);
+    
+    should_yield = (cur->effective_priority < top->effective_priority);
+  }
+  intr_set_level (old);
+  if (should_yield)
+    thread_yield ();
 }
 
 /* Returns the current thread's priority. */

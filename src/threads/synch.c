@@ -256,9 +256,17 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  enum intr_level old_level = intr_disable ();
+
   lock->holder = NULL;
   list_remove (&lock->elem);
   sema_up (&lock->semaphore);
+
+  // Undo donation (since lock parameters are all updated, this will undo donation)
+  struct thread *cur = thread_current ();
+  thread_update_effective_priority(cur);
+
+  yield_if_we_should();
 }
 
 /* Returns true if the current thread holds LOCK, false
