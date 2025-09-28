@@ -192,7 +192,6 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
-  
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
@@ -200,23 +199,27 @@ lock_acquire (struct lock *lock)
   struct thread *cur = thread_current ();
 
   enum intr_level old_level = intr_disable ();
-  if (lock->holder != NULL){
-    cur->waiting_lock = lock;
-  }
   
-  
+  // First, add then delete waiting_lock of cur
+  // Whenever cur HAS to wait
+
+  // adding & donation process
   struct semaphore *sema = &lock->semaphore;
   while (sema->value == 0) 
     {
+      if (lock->holder != NULL){
+        cur->waiting_lock = lock;
+      }
       list_insert_ordered (&sema->waiters, &cur->elem, compare_effective_priority, NULL);
       thread_update_effective_priority(lock->holder);
       thread_block ();
+      cur->waiting_lock = NULL;
     }
 
+  // Acquiring happens here
   sema->value--;
-  cur->waiting_lock = NULL;
   lock->holder = cur;
-  list_push_back (&thread_current ()->locks_holding, &lock->elem);
+  list_push_back (&cur->locks_holding, &lock->elem);
 
   thread_update_effective_priority (cur);
   intr_set_level (old_level);
@@ -259,7 +262,7 @@ lock_release (struct lock *lock)
   enum intr_level old_level = intr_disable ();
 
   lock->holder = NULL;
-  list_remove (&lock->elem);
+  list_remove (&lock->elem);    // This updates the locks_holding list
   sema_up (&lock->semaphore);
 
   // Undo donation (since lock parameters are all updated, this will undo donation)
@@ -267,6 +270,8 @@ lock_release (struct lock *lock)
   thread_update_effective_priority(cur);
 
   yield_if_we_should();
+  intr_set_level (old_level);
+
 }
 
 /* Returns true if the current thread holds LOCK, false

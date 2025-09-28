@@ -200,7 +200,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
+  yield_if_we_should();
   return tid;
 }
 
@@ -242,7 +242,7 @@ thread_unblock (struct thread *t)
   list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
   t->status = THREAD_READY;
 
-  yield_if_we_should ();  
+  intr_set_level (old_level);
 }
 
 /* Returns the name of the running thread. */
@@ -347,8 +347,8 @@ compare_effective_priority (const struct list_elem *a,
     const struct thread *ta = list_entry(a, struct thread, elem);
     const struct thread *tb = list_entry(b, struct thread, elem);
     
-    if (ta->effective_priority > tb->effective_priority)
-      return true;
+    if (ta->effective_priority != tb->effective_priority)
+      return ta->effective_priority > tb->effective_priority;
     return ta->tid < tb->tid;
   }
 
@@ -415,13 +415,14 @@ thread_set_priority (int new_priority)
   thread_update_effective_priority(cur);
 
   yield_if_we_should();
+  intr_set_level (old_level);
 }
 
 void
 yield_if_we_should (void)
 {
-  enum intr_level old = intr_disable ();
-  bool should_yield;
+  enum intr_level old_level = intr_disable ();
+  bool should_yield = false;
 
   if (!list_empty (&ready_list)) {
     struct thread *cur = thread_current ();
@@ -429,9 +430,16 @@ yield_if_we_should (void)
     
     should_yield = (cur->effective_priority < top->effective_priority);
   }
-  intr_set_level (old);
-  if (should_yield)
-    thread_yield ();
+
+  if (should_yield) {
+    if (intr_context()) {
+      intr_yield_on_return();
+    } else {
+      thread_yield();
+    }
+  }
+  intr_set_level (old_level);
+
 }
 
 /* Returns the current thread's priority. */
@@ -572,7 +580,6 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->locks_holding);
   t->waiting_lock = NULL;
   t->magic = THREAD_MAGIC;
-
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
