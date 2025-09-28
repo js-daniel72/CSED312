@@ -348,7 +348,11 @@ compare_effective_priority (const struct list_elem *a,
     
     if (ta->effective_priority != tb->effective_priority)
       return ta->effective_priority > tb->effective_priority;
-    return ta->tid < tb->tid;
+    
+    return false;
+    // We deliberately set this value to false, to make the queue a round robin fashion
+    // (recall that this function only gets called when we insert in a sorted way)
+    // (so, if the priorities are the same, then the insertion will send the thread to the back of the queue)
   }
 
 /*
