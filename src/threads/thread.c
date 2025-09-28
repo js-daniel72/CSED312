@@ -237,7 +237,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -308,7 +308,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, compare_effective_priority, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -336,7 +336,31 @@ thread_foreach (thread_action_func *func, void *aux)
 /* Priority Scheduling */
 /*                     */
 
+bool
+compare_effective_priority (const struct list_elem *a,
+                            const struct list_elem *b,
+                            void *aux UNUSED)
+  {
+    const struct thread *ta = list_entry(a, struct thread, elem);
+    const struct thread *tb = list_entry(b, struct thread, elem);
+    
+    if (ta->effective_priority > tb->effective_priority)
+      return true;
+    return ta->tid < tb->tid;
+  }
 
+/*
+void
+thread_update_effective_priority (struct thread *donee)
+{
+  int max_pri = donee->priority;
+  for locks in donee->locks_holding:
+    if locks->semaphore->waiters:
+      if thread->effective_priority > max_pri
+        max_pri = thread->effective_priority;
+  donee->effective_priority = max_pri;
+}
+*/
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
