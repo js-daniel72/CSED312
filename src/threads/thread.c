@@ -350,6 +350,10 @@ compare_effective_priority (const struct list_elem *a,
   }
 
 
+/*
+  Updates effective priority of t, and if t waits for a lock then it donates upwards too.
+  We traverse through the waiting list, so the waiting list must be well-established before calling
+*/
 void
 thread_update_effective_priority (struct thread *t)
 {
