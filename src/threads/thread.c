@@ -241,7 +241,6 @@ thread_unblock (struct thread *t)
 
   list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
   t->status = THREAD_READY;
-
   intr_set_level (old_level);
 }
 
@@ -352,7 +351,6 @@ compare_effective_priority (const struct list_elem *a,
     return ta->tid < tb->tid;
   }
 
-
 /*
   Updates effective priority of t, and if t waits for a lock then it donates upwards too.
   We traverse through the waiting list, so the waiting list must be well-established before calling
@@ -442,11 +440,11 @@ yield_if_we_should (void)
 
 }
 
-/* Returns the current thread's priority. */
+/* Returns the current thread's effective priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->effective_priority;
 }
 
 
