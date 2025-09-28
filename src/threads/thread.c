@@ -349,24 +349,69 @@ compare_effective_priority (const struct list_elem *a,
     return ta->tid < tb->tid;
   }
 
-/*
+
 void
-thread_update_effective_priority (struct thread *donee)
+thread_update_effective_priority (struct thread *t)
 {
-  int max_pri = donee->priority;
-  for locks in donee->locks_holding:
-    if locks->semaphore->waiters:
-      if thread->effective_priority > max_pri
-        max_pri = thread->effective_priority;
-  donee->effective_priority = max_pri;
+  // Disable interrupts
+  enum intr_level old_level = intr_disable ();
+
+  int old_eff = t->effective_priority;
+  int max_pri = t->priority;
+  
+  // For each holding lock, see the top of its waiting list, which must have max priority.
+  // If the waiting list element has bigger priority, update max_pri
+  for (struct list_elem *e = list_begin(&t->locks_holding);
+       e != list_end(&t->locks_holding);
+       e = list_next(e))
+  {
+    struct lock *lock = list_entry(e, struct lock, elem);
+    
+    if(!list_empty (&lock->semaphore.waiters)) {
+      struct thread *top = list_entry(list_front(&lock->semaphore.waiters), struct thread, elem);
+      if (top->effective_priority > max_pri)
+        max_pri = top->effective_priority;
+    }
+  }
+
+  t->effective_priority = max_pri;
+
+  // Reorder ready lists and wait lists
+  if (t->status == THREAD_READY) {
+    list_remove (&t->elem);
+    list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
+  }
+
+  // Propogate the donation through the lock chain
+  if (t->effective_priority > old_eff) {
+    struct thread *cur = t;
+    while (cur->waiting_lock && cur->waiting_lock->holder) {
+      struct thread *holder = cur->waiting_lock->holder;
+
+      int holder_old = holder->effective_priority;
+      thread_update_effective_priority (holder);
+
+      if (holder->effective_priority <= holder_old)
+        break;
+      cur = holder;
+    }
+  }
+
+  intr_set_level (old_level);
 }
-*/
+
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  enum intr_level old_level = intr_disable ();
+  
+  struct thread *cur = thread_current ();
+  cur->priority = new_priority;
+  thread_update_effective_priority(cur);
+
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
