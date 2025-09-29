@@ -436,26 +436,27 @@ thread_update_effective_priority (struct thread *t)
   t->effective_priority = max_pri;
 
   // Reorder ready lists and wait lists
-  if (t->status == THREAD_READY) {
-    list_remove (&t->elem);
-    list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
+  if (t->effective_priority > old_eff){
+    if (t->status == THREAD_READY) {
+      list_remove (&t->elem);
+      list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
+    }
+    else if (t->waiting_lock != NULL) {
+      struct semaphore *sem = &t->waiting_lock->semaphore;
+      list_remove (&t->elem);
+      list_insert_ordered (&sem->waiters, &t->elem, compare_effective_priority, NULL);
+    }
+    else if (t->waiting_sema != NULL) {
+      list_remove (&t->elem);
+      list_insert_ordered (&t->waiting_sema->waiters, &t->elem, compare_effective_priority, NULL);
+    }
+    // Propogate the donation through the lock chain
+    if (t->waiting_lock != NULL) {
+      struct thread *holder = t->waiting_lock->holder;
+      thread_update_effective_priority (holder);
+    }
   }
-  else if (t->waiting_lock != NULL) {
-    struct semaphore *sem = &t->waiting_lock->semaphore;
-    list_remove (&t->elem);
-    list_insert_ordered (&sem->waiters, &t->elem, compare_effective_priority, NULL);
-  }
-  else if (t->waiting_sema != NULL) {
-    list_remove (&t->elem);
-    list_insert_ordered (&t->waiting_sema->waiters, &t->elem, compare_effective_priority, NULL);
-  }
-
-  // Propogate the donation through the lock chain
-  if (t->effective_priority > old_eff && t->waiting_lock != NULL) {
-    struct thread *holder = t->waiting_lock->holder;
-    thread_update_effective_priority (holder);
-  }
-
+    
   intr_set_level (old_level);
 }
 

@@ -29,6 +29,7 @@
 #include "threads/synch.h"
 #include <stdio.h>
 #include <string.h>
+#include <debug.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
@@ -223,8 +224,6 @@ lock_acquire (struct lock *lock)
   sema->value--;
   lock->holder = cur;
   list_push_back (&cur->locks_holding, &lock->elem);
-
-  thread_update_effective_priority (cur);
   intr_set_level (old_level);
 }
 
@@ -352,7 +351,7 @@ cond_wait (struct condition *cond, struct lock *lock)
 bool
 compare_waiter_priority (const struct list_elem *a,
                          const struct list_elem *b,
-                         void *aux)
+                         void *aux UNUSED)
   {
     const struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
     const struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
