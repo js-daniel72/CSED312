@@ -278,13 +278,7 @@ thread_unblock (struct thread *t)
     list_insert_ordered (&ready_list, &t->elem, compare_effective_priority, NULL);
   }
 
-
   t->status = THREAD_READY;
-  // if (thread_mlfqs && t->priority > thread_current()->priority) {
-  //   intr_set_level(old_level);
-  //   intr_yield_on_return();
-  //   return;
-  // }  // I think this should work when priority scheduling is implemented
   intr_set_level (old_level);
 }
 
@@ -478,41 +472,32 @@ void
 yield_if_we_should (void)
 {
   if (thread_mlfqs) {
-    if (timer_ticks() < TIMER_FREQ) {  // 첫 1초 동안은 yielding 안 함
+    if (timer_ticks() == 0) {  
       return;
     }
-      struct thread *cur = thread_current();
+    struct thread *cur = thread_current();
 
-      if (cur == idle_thread) {
-        return;
+    enum intr_level old_level = intr_disable();
+    bool should_yield = false;
+
+    for (int i = PRI_MAX; i > cur->priority; i--) {
+      if (!list_empty(&mlfqs_ready_lists[i])) {
+        should_yield = true;
+        break;
       }
-
-      enum intr_level old_level = intr_disable();
-      bool should_yield = false;
-
-      // if (cur->priority < PRI_MIN || cur->priority > PRI_MAX) {
-      //   intr_set_level(old_level);
-      //   return;
-      // }
-
-      for (int i = PRI_MAX; i > cur->priority; i--) {
-        if (!list_empty(&mlfqs_ready_lists[i])) {
-          should_yield = true;
-          break;
-        }
-      }
-
-      intr_set_level(old_level);
-
-      if (should_yield) {
-        if (intr_context()) {
-          intr_yield_on_return();
-        } else {
-          thread_yield();
-        }
-      }
-      return;
     }
+
+    intr_set_level(old_level);
+
+    if (should_yield) {
+      if (intr_context()) {
+        intr_yield_on_return();
+      } else {
+        thread_yield();
+      }
+    }
+    return;
+  }
 
   enum intr_level old_level = intr_disable ();
   bool should_yield = false;
