@@ -92,9 +92,12 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    
+
     int64_t tick_to_wake;               /* What time(tick) should this thread wake up? */
     struct list_elem sleep_elem;        /* List element for sleeping list */
+
+    int nice;                           /* Niceness value */
+    int recent_cpu;                     /* Recent CPU value */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -140,5 +143,11 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void mlfqs_update_load_avg(void);
+void mlfqs_update_recent_cpu(struct thread *t);
+void mlfqs_update_all_recent_cpu(void);
+void mlfqs_calculate_priority(struct thread *t);
+void mlfqs_update_all_priority(void);
 
 #endif /* threads/thread.h */
