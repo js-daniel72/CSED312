@@ -71,12 +71,12 @@ static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
-                                        static void *alloc_frame (struct thread *, size_t size);
-                                        static void schedule (void);
-                                        void thread_schedule_tail (struct thread *prev);
-                                        static tid_t allocate_tid (void);
+static void *alloc_frame (struct thread *, size_t size);
+static void schedule (void);
+void thread_schedule_tail (struct thread *prev);
+static tid_t allocate_tid (void);
 
-                                        static int load_avg;            /* For 4.4BSD */
+static int load_avg;            /* For 4.4BSD */
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -91,8 +91,8 @@ static bool is_thread (struct thread *) UNUSED;
 
    It is not safe to call thread_current() until this function
    finishes. */
-        void
-        thread_init (void)
+void
+thread_init (void)
 {
     ASSERT (intr_get_level () == INTR_OFF);
 
@@ -106,7 +106,7 @@ static bool is_thread (struct thread *) UNUSED;
     initial_thread->status = THREAD_RUNNING;
     initial_thread->tid = allocate_tid ();
 
-    load_avg = int_to_fp(0);  // Should it be int_to_fp(0)? -> not sure if it matters..
+    load_avg = int_to_fp(0);  
     if(thread_mlfqs){
         for(int i = 0; i <= PRI_MAX; i++){
             list_init(&mlfqs_ready_lists[i]);
@@ -213,8 +213,8 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
   if(thread_mlfqs){
-      t->nice = thread_current()->nice;
-      t->recent_cpu = thread_current()->recent_cpu;
+    t->nice = thread_current()->nice;
+    t->recent_cpu = thread_current()->recent_cpu;
   }
 
   /* Stack frame for kernel_thread(). */
@@ -282,7 +282,7 @@ thread_unblock (struct thread *t)
   t->status = THREAD_READY;
   // if (thread_mlfqs && t->priority > thread_current()->priority) {
   //   intr_set_level(old_level);
-  //   thread_yield();
+  //   intr_yield_on_return();
   //   return;
   // }  // I think this should work when priority scheduling is implemented
   intr_set_level (old_level);
@@ -359,7 +359,6 @@ thread_yield (void)
     }
     else{
       list_insert_ordered (&ready_list, &cur->elem, compare_effective_priority, NULL);
-        // list_push_back (&ready_list, &cur->elem);
     }
   }
 
@@ -464,6 +463,7 @@ thread_update_effective_priority (struct thread *t)
 void
 thread_set_priority (int new_priority)
 {
+  if (thread_mlfqs) return;
   enum intr_level old_level = intr_disable ();
 
   struct thread *cur = thread_current ();
@@ -477,6 +477,43 @@ thread_set_priority (int new_priority)
 void
 yield_if_we_should (void)
 {
+  if (thread_mlfqs) {
+    if (timer_ticks() < TIMER_FREQ) {  // 첫 1초 동안은 yielding 안 함
+      return;
+    }
+      struct thread *cur = thread_current();
+
+      if (cur == idle_thread) {
+        return;
+      }
+
+      enum intr_level old_level = intr_disable();
+      bool should_yield = false;
+
+      // if (cur->priority < PRI_MIN || cur->priority > PRI_MAX) {
+      //   intr_set_level(old_level);
+      //   return;
+      // }
+
+      for (int i = PRI_MAX; i > cur->priority; i--) {
+        if (!list_empty(&mlfqs_ready_lists[i])) {
+          should_yield = true;
+          break;
+        }
+      }
+
+      intr_set_level(old_level);
+
+      if (should_yield) {
+        if (intr_context()) {
+          intr_yield_on_return();
+        } else {
+          thread_yield();
+        }
+      }
+      return;
+    }
+
   enum intr_level old_level = intr_disable ();
   bool should_yield = false;
 
@@ -502,18 +539,8 @@ yield_if_we_should (void)
 int
 thread_get_priority (void)
 {
-  return thread_current ()->effective_priority;
+  return thread_current()->effective_priority;
 }
-
-
-
-
-
-
-
-
-
-
 
 /* Sets the current thread's nice value to NICE. */
 void
@@ -522,9 +549,9 @@ thread_set_nice (int nice)
   enum intr_level old_level = intr_disable();
   struct thread *current_thread = thread_current();
   current_thread->nice = nice;
-  // todo: recalculate priority since nice value changed
+
   mlfqs_calculate_priority(current_thread);
-  // todo: yield if necessary
+
   for (int i = PRI_MAX; i > current_thread->priority; i--){
     if (!list_empty(&mlfqs_ready_lists[i])){
       thread_yield();

@@ -211,20 +211,22 @@ lock_acquire (struct lock *lock)
 
   // adding & donation process
   struct semaphore *sema = &lock->semaphore;
+  cur->waiting_lock = lock;
   while (sema->value == 0) 
     {
-      cur->waiting_lock = lock;
+      
       list_insert_ordered (&sema->waiters, &cur->elem, compare_effective_priority, NULL);
       thread_update_effective_priority(lock->holder);
       thread_block ();
-      cur->waiting_lock = NULL;
+      
     }
+  cur->waiting_lock = NULL;
 
   // Acquiring happens here
   sema->value--;
   lock->holder = cur;
-  list_push_back (&cur->locks_holding, &lock->elem);
   intr_set_level (old_level);
+  list_push_back (&cur->locks_holding, &lock->elem);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
