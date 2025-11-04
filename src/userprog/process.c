@@ -88,6 +88,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  while(true);  // Advise from the docs p.28: For now, change process_wait() to an infinite loop
   return -1;
 }
 
