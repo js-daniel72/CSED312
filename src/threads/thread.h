@@ -100,6 +100,10 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     uint32_t exit_status;               /* Exit status of the process */
+
+    struct file *fd_table[128];        /* File descriptor table */
+    int next_fd;                       /* Next available file descriptor */   
+    struct file *executable;           /* Executable file */
 #endif
 
     /* Owned by thread.c. */
