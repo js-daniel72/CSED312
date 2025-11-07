@@ -31,7 +31,9 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char program_name[16];
   tid_t tid;
+  int i;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -41,7 +43,16 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  for (i = 0; i < 15; i++)
+  {
+    if (file_name[i] != ' ' && file_name[i] != '\0')
+      program_name[i] = file_name[i];
+    else
+      break;
+  }
+  program_name[i] = '\0';
+    
+  tid = thread_create (program_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -116,7 +127,6 @@ void argument_push(void **esp, int argc, char **argv)
 {
   int i;
   int str_len;
-  char **argv_actual_loc;
   char** argv_addresses = palloc_get_page(0); // for step 3
   ASSERT(argv_addresses != NULL);
 
@@ -144,9 +154,10 @@ void argument_push(void **esp, int argc, char **argv)
     *((char **)(*esp)) = argv_addresses[i];
     // Push the address of argv[i]
   }
-    
+   
+
   // Step 4: push address of argv itself
-  argv_actual_loc = (char **)(*esp);
+  char** argv_actual_loc = (char **)(*esp);
   *esp -= 4;
   *((char ***)(*esp)) = argv_actual_loc;
 
