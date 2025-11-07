@@ -129,43 +129,45 @@ void argument_push(void **esp, int argc, char **argv)
   int str_len;
   char** argv_addresses = palloc_get_page(0); // for step 3
   ASSERT(argv_addresses != NULL);
-
+  uint8_t *sp = (uint8_t *)(*esp);
   // Step 1: push the actual strings, and null terminate them
   for (i = argc-1; i >= 0; i--)
   {
     str_len = strlen(argv[i]) + 1;
-    *esp -= str_len;
-    strlcpy((char *)(*esp), argv[i], str_len);
-    argv_addresses[i] = (char*) *esp;     // for step 3
+    sp -= str_len;
+    strlcpy((char *)(sp), argv[i], str_len);
+    argv_addresses[i] = (char*) sp;     // for step 3
   }
 
   // Step 2: word align
-  while((uintptr_t)(*esp) % 4 != 0)
+  while((uintptr_t)(sp) % 4 != 0)
   {
-    *esp -= 1;
-    *((uint8_t *)(*esp)) = 0;
+    sp -= 1;
+    *((uint8_t *)(sp)) = 0;
   }
 
   // Step 3: push addresses of argv[]
   argv_addresses[argc] = NULL;
   for (i = argc; i >= 0; i--)
   {
-    *esp -= 4;
-    *((char **)(*esp)) = argv_addresses[i];
+    sp -= 4;
+    *((char **)(sp)) = argv_addresses[i];
     // Push the address of argv[i]
   }
    
 
   // Step 4: push address of argv itself
-  char** argv_actual_loc = (char **)(*esp);
-  *esp -= 4;
-  *((char ***)(*esp)) = argv_actual_loc;
+  char** argv_actual_loc = (char **)(sp);
+  sp -= 4;
+  *((char ***)(sp)) = argv_actual_loc;
 
   // Step 5. argc and ret addr.
-  *esp -= 4;
-  *(int *)(*esp) = argc;
-  *esp -= 4;
-  *(void **)(*esp) = NULL;
+  sp -= 4;
+  *(int *)(sp) = argc;
+  sp -= 4;
+  *(void **)(sp) = NULL;
+
+  *esp = sp;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
