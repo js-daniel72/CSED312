@@ -20,6 +20,8 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+void argument_push(void **esp, int argc, char **argv);
+int argument_parse(char *cmd_line, char **argv);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -51,21 +53,39 @@ static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
+  
+  // defined for argument parsing
+  char **argv;
+  int argc;
+  
   struct intr_frame if_;
   bool success;
+
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
+  argv = palloc_get_page (0);
+  if (argv == NULL){
+    palloc_free_page (file_name);
     thread_exit ();
+  }
+  
+  argc = argument_parse(file_name, argv);
+  success = load (argv[0], &if_.eip, &if_.esp);
 
+  if (!success) {
+    palloc_free_page (argv);
+    palloc_free_page (file_name);
+    thread_exit ();
+  } 
+
+  argument_push (&if_.esp, argc, argv);
+  palloc_free_page (argv);
+  palloc_free_page (file_name);
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -74,6 +94,67 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+/* get cmdline as string input, then modify argv to have parsed stuff. Return the number of arguments */
+int argument_parse(char *cmd_line, char **argv)
+{
+  if (!cmd_line || !argv) return 0;
+  int argc = 0;
+  char *save_ptr = NULL;
+  char *tok = strtok_r(cmd_line, " ", &save_ptr);
+
+  while (tok != NULL) {
+    argv[argc++] = tok;
+    tok = strtok_r(NULL, " ", &save_ptr);
+  }
+  argv[argc] = NULL;   // NULL-terminate, according to the conventions
+  return argc;
+}
+
+void argument_push(void **esp, int argc, char **argv)
+{
+  int i;
+  int str_len;
+  char **argv_actual_loc;
+  char** argv_addresses = palloc_get_page(0); // for step 3
+  ASSERT(argv_addresses != NULL);
+
+  // Step 1: push the actual strings, and null terminate them
+  for (i = argc-1; i >= 0; i--)
+  {
+    str_len = strlen(argv[i]) + 1;
+    *esp -= str_len;
+    strlcpy((char *)(*esp), argv[i], str_len);
+    argv_addresses[i] = (char*) *esp;     // for step 3
+  }
+
+  // Step 2: word align
+  while((uintptr_t)(*esp) % 4 != 0)
+  {
+    *esp -= 1;
+    *((uint8_t *)(*esp)) = 0;
+  }
+
+  // Step 3: push addresses of argv[]
+  argv_addresses[argc] = NULL;
+  for (i = argc; i >= 0; i--)
+  {
+    *esp -= 4;
+    *((char **)(*esp)) = argv_addresses[i];
+    // Push the address of argv[i]
+  }
+    
+  // Step 4: push address of argv itself
+  argv_actual_loc = (char **)(*esp);
+  *esp -= 4;
+  *((char ***)(*esp)) = argv_actual_loc;
+
+  // Step 5. argc and ret addr.
+  *esp -= 4;
+  *(int *)(*esp) = argc;
+  *esp -= 4;
+  *(void **)(*esp) = NULL;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If

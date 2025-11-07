@@ -7,6 +7,8 @@
 #include "userprog/process.h"
 #include "lib/kernel/console.h"
 #include "threads/synch.h"
+#include "devices/shutdown.h"
+#include "filesys/file.h"
 
 static struct lock file_lock;  /* Lock for file operations */
 
@@ -91,6 +93,10 @@ sys_write (int fd, const void *buffer, unsigned size)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+  uint32_t syscall_number;
+  uint32_t status;
+  uint32_t u_fd, u_buffer, u_size;
+
   // TODO: Check if pointer f is valid
   if (f == NULL)
     sys_exit(-1);
@@ -100,7 +106,6 @@ syscall_handler (struct intr_frame *f)
     sys_exit(-1);
 
   /* Get the syscall number from the user stack */
-  uint32_t syscall_number;
   if (!get_user (&syscall_number, (uint32_t *) f->esp))
     sys_exit(-1);
 
@@ -112,7 +117,6 @@ syscall_handler (struct intr_frame *f)
 
     case SYS_EXIT:
       // Get the exit status (first argument) from the stack 
-      uint32_t status;
       if(get_user (&status, (uint32_t *) f->esp + 1)){
         sys_exit(status);
       }
@@ -147,7 +151,6 @@ syscall_handler (struct intr_frame *f)
       // TODO: Implement sys_read
       break;
     case SYS_WRITE:
-      uint32_t u_fd, u_buffer, u_size;
       if (!get_user (&u_fd, (uint32_t *) f->esp + 1) ||
           !get_user (&u_buffer, (uint32_t *) f->esp + 2) ||
           !get_user (&u_size, (uint32_t *) f->esp + 3))
