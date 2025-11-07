@@ -13,81 +13,13 @@
 static struct lock file_lock;  /* Lock for file operations */
 
 static void syscall_handler (struct intr_frame *);
-
-static bool
-get_user (uint32_t *dst, const uint32_t *usrc)
-{
-  /* Validate the pointer is in user space and not null */
-  if (usrc == NULL || !is_user_vaddr (usrc))
-    return false;
-  
-  /* Ensure the last byte of the 4-byte value is also in user space */
-  uint8_t *last_byte = (uint8_t *) usrc + sizeof (uint32_t) - 1;
-  if (!is_user_vaddr (last_byte))
-    return false;
-  
-  /* Read the value */
-  *dst = *usrc;
-  return true;
-}
+static bool get_user (uint32_t *dst, const uint32_t *usrc);
 
 void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   lock_init (&file_lock);
-}
-
-void
-sys_exit (int status)
-{
-  struct thread *cur = thread_current ();
-  cur->exit_status = status;
-
-  printf ("%s: exit(%d)\n", cur->name, status);
-
-  process_exit ();
-  thread_exit ();
-}
-
-int
-sys_write (int fd, const void *buffer, unsigned size)
-{
-  // TODO: Check if fd, buffer, and size are valid
-  if(fd < 0 || fd > 127)
-    return -1;
-
-  if(buffer == NULL || !is_user_vaddr(buffer))
-    sys_exit(-1);
-  if(size > 0 && !is_user_vaddr((uint8_t *)buffer + size - 1)){
-    sys_exit(-1);
-  }
-  if(fd == 0){
-    return 0;  // write을 불러놓고 stdin을 하려고 하면 0? -1? 
-  }
-
-
-  if(fd == 1){
-    // TODO: writes to the console using putbuf
-    lock_acquire(&file_lock);  // putbuf에 lock이 있긴 함.. 필요 없을지도?
-    putbuf(buffer, size);
-    lock_release(&file_lock);
-    return size;
-  }
-
-  // TODO: Write to file at fd position
-  struct thread *cur = thread_current();
-  lock_acquire(&file_lock);
-  struct file *f = cur->fd_table[fd];
-  if(f == NULL){
-    lock_release(&file_lock);
-    return -1;
-  }
-
-  off_t bytes_written = file_write(f, buffer, size);
-  lock_release(&file_lock);
-
-  return (int)bytes_written;
 }
 
 static void
@@ -180,4 +112,79 @@ syscall_handler (struct intr_frame *f)
       thread_exit ();
       break;
   }
+}
+
+
+
+/* Syscall's meat functions below here */
+
+void
+sys_exit (int status)
+{
+  struct thread *cur = thread_current ();
+  cur->exit_status = status;
+
+  printf ("%s: exit(%d)\n", cur->name, status);
+
+  process_exit ();
+  thread_exit ();
+}
+
+int
+sys_write (int fd, const void *buffer, unsigned size)
+{
+  // TODO: Check if fd, buffer, and size are valid
+  if(fd < 0 || fd > 127)
+    return -1;
+
+  if(buffer == NULL || !is_user_vaddr(buffer))
+    sys_exit(-1);
+  if(size > 0 && !is_user_vaddr((uint8_t *)buffer + size - 1)){
+    sys_exit(-1);
+  }
+  if(fd == 0){
+    return 0;  // write을 불러놓고 stdin을 하려고 하면 0? -1? 
+  }
+
+
+  if(fd == 1){
+    // TODO: writes to the console using putbuf
+    lock_acquire(&file_lock);  // putbuf에 lock이 있긴 함.. 필요 없을지도?
+    putbuf(buffer, size);
+    lock_release(&file_lock);
+    return size;
+  }
+
+  // TODO: Write to file at fd position
+  struct thread *cur = thread_current();
+  lock_acquire(&file_lock);
+  struct file *f = cur->fd_table[fd];
+  if(f == NULL){
+    lock_release(&file_lock);
+    return -1;
+  }
+
+  off_t bytes_written = file_write(f, buffer, size);
+  lock_release(&file_lock);
+
+  return (int)bytes_written;
+}
+
+
+/* Helper function to read arguments from stack */
+static bool
+get_user (uint32_t *dst, const uint32_t *usrc)
+{
+  /* Validate the pointer is in user space and not null */
+  if (usrc == NULL || !is_user_vaddr (usrc))
+    return false;
+  
+  /* Ensure the last byte of the 4-byte value is also in user space */
+  uint8_t *last_byte = (uint8_t *) usrc + sizeof (uint32_t) - 1;
+  if (!is_user_vaddr (last_byte))
+    return false;
+  
+  /* Read the value */
+  *dst = *usrc;
+  return true;
 }
