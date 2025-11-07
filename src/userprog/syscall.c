@@ -15,6 +15,9 @@ static struct lock file_lock;  /* Lock for file operations */
 static void syscall_handler (struct intr_frame *);
 static bool get_user (uint32_t *dst, const uint32_t *usrc);
 
+void sys_exit (int status);
+int sys_write (int fd, const void *buffer, unsigned size);
+
 void
 syscall_init (void) 
 {
@@ -29,34 +32,32 @@ syscall_handler (struct intr_frame *f)
   uint32_t status;
   uint32_t u_fd, u_buffer, u_size;
 
-  // TODO: Check if pointer f is valid
+  // Validations
   if (f == NULL)
     sys_exit(-1);
-
-  /* Validate that the user stack pointer is in user space */
   if (!is_user_vaddr (f->esp) || f->esp == NULL)
     sys_exit(-1);
 
-  /* Get the syscall number from the user stack */
+  // Obtain syscall number
   if (!get_user (&syscall_number, (uint32_t *) f->esp))
     sys_exit(-1);
 
   switch (syscall_number) {
-    // syscall related to user process manipulation
+
+    /* syscalls - user process manipulation */
     case SYS_HALT:
-      // TODO: Implement sys_halt
+    {
+      shutdown_power_off();
       break;
-
+    }
+    
     case SYS_EXIT:
-      // Get the exit status (first argument) from the stack 
-      if(get_user (&status, (uint32_t *) f->esp + 1)){
-        sys_exit(status);
-      }
-      else{
+    {
+      if( !get_user (&status, (uint32_t *) f->esp + 1))
         sys_exit(-1);
-      }
+      sys_exit(status);
       break;
-
+    }
     case SYS_EXEC:
       // TODO: Implement sys_exec
       break;
@@ -66,7 +67,7 @@ syscall_handler (struct intr_frame *f)
       break;
 
 
-    // syscall related to file manipulation
+    /* syscalls - file manipulation */
     case SYS_CREATE:
       // TODO: Implement sys_create
       break;
@@ -83,6 +84,7 @@ syscall_handler (struct intr_frame *f)
       // TODO: Implement sys_read
       break;
     case SYS_WRITE:
+    {
       if (!get_user (&u_fd, (uint32_t *) f->esp + 1) ||
           !get_user (&u_buffer, (uint32_t *) f->esp + 2) ||
           !get_user (&u_size, (uint32_t *) f->esp + 3))
@@ -96,7 +98,7 @@ syscall_handler (struct intr_frame *f)
 
       f->eax = sys_write (fd, buffer, size);
       break;
-
+    }
     case SYS_SEEK:
       // TODO: Implement sys_seek
       break;
@@ -107,16 +109,16 @@ syscall_handler (struct intr_frame *f)
       // TODO: Implement sys_close
       break;
 
+    /* invalid syscall number */
     default:
-      /* Invalid syscall number */
-      thread_exit ();
+      sys_exit(-1);
       break;
   }
 }
 
 
 
-/* Syscall's meat functions below here */
+/* Syscall's central functions below here */
 
 void
 sys_exit (int status)
@@ -126,7 +128,6 @@ sys_exit (int status)
 
   printf ("%s: exit(%d)\n", cur->name, status);
 
-  process_exit ();
   thread_exit ();
 }
 
