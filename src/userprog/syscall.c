@@ -1,22 +1,30 @@
-#include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+
+#include "userprog/syscall.h"
 #include "userprog/process.h"
-#include "lib/kernel/console.h"
-#include "threads/synch.h"
-#include "devices/shutdown.h"
+#include "userprog/pagedir.h"
+
 #include "filesys/file.h"
+#include "filesys/filesys.h"
+
+#include "lib/kernel/console.h"
+#include "devices/shutdown.h"
 
 static struct lock file_lock;  /* Lock for file operations */
 
 static void syscall_handler (struct intr_frame *);
-static bool get_user (uint32_t *dst, const uint32_t *usrc);
+void get_user (uint32_t *dst, uint32_t *usrc);
+void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) */
 
 void sys_exit (int status);
+bool sys_create (const char *file, unsigned initial_size);
 int sys_write (int fd, const void *buffer, unsigned size);
+
 
 void
 syscall_init (void) 
@@ -28,23 +36,12 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  uint32_t syscall_number;
-  uint32_t status;
-  uint32_t u_fd, u_buffer, u_size;
+  validate_ptr(f->esp);
 
-  // Validations
-  if (f == NULL)
-    sys_exit(-1);
-  if (!is_user_vaddr (f->esp) || f->esp == NULL)
-    sys_exit(-1);
-
-  // Obtain syscall number
-  if (!get_user (&syscall_number, (uint32_t *) f->esp))
-    sys_exit(-1);
-
+  uint32_t arg1, arg2, arg3;
+  uint32_t syscall_number = *((uint32_t *) f->esp);
+  
   switch (syscall_number) {
-
-    /* syscalls - user process manipulation */
     case SYS_HALT:
     {
       shutdown_power_off();
@@ -53,9 +50,8 @@ syscall_handler (struct intr_frame *f)
     
     case SYS_EXIT:
     {
-      if( !get_user (&status, (uint32_t *) f->esp + 1))
-        sys_exit(-1);
-      sys_exit(status);
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      sys_exit(arg1);
       break;
     }
     case SYS_EXEC:
@@ -67,9 +63,10 @@ syscall_handler (struct intr_frame *f)
       break;
 
 
-    /* syscalls - file manipulation */
     case SYS_CREATE:
-      // TODO: Implement sys_create
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      get_user (&arg2, (uint32_t *) f->esp + 2 );
+      f->eax = sys_create ((const char*)arg1, arg2);
       break;
     case SYS_REMOVE:
       // TODO: Implement sys_remove
@@ -85,18 +82,11 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_WRITE:
     {
-      if (!get_user (&u_fd, (uint32_t *) f->esp + 1) ||
-          !get_user (&u_buffer, (uint32_t *) f->esp + 2) ||
-          !get_user (&u_size, (uint32_t *) f->esp + 3))
-        {
-          sys_exit (-1);
-        }
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      get_user (&arg2, (uint32_t *) f->esp + 2 );
+      get_user (&arg3, (uint32_t *) f->esp + 3 );
 
-      int fd = (int) u_fd;
-      void* buffer = (void*) u_buffer;
-      unsigned  size = (unsigned) u_size;
-
-      f->eax = sys_write (fd, buffer, size);
+      f->eax = sys_write ((int)arg1, (const void *)arg2, arg3);
       break;
     }
     case SYS_SEEK:
@@ -115,6 +105,9 @@ syscall_handler (struct intr_frame *f)
       break;
   }
 }
+
+
+
 
 
 
@@ -172,20 +165,40 @@ sys_write (int fd, const void *buffer, unsigned size)
 }
 
 
-/* Helper function to read arguments from stack */
-static bool
-get_user (uint32_t *dst, const uint32_t *usrc)
+
+
+
+
+
+bool
+sys_create (const char* file, unsigned initial_size)
 {
-  /* Validate the pointer is in user space and not null */
-  if (usrc == NULL || !is_user_vaddr (usrc))
-    return false;
-  
-  /* Ensure the last byte of the 4-byte value is also in user space */
-  uint8_t *last_byte = (uint8_t *) usrc + sizeof (uint32_t) - 1;
-  if (!is_user_vaddr (last_byte))
-    return false;
-  
-  /* Read the value */
+  if (file == NULL) sys_exit(-1);
+  validate_ptr(file);
+  return filesys_create(file, initial_size);
+}
+
+
+/* EXITS when ptr is invalid, and continues if valid */
+void
+validate_ptr (void* ptr)
+{
+  struct thread *cur = thread_current ();
+
+  // Validations 1: ptr in user space, and in an allocated page
+  if (!is_user_vaddr (ptr) || pagedir_get_page(cur->pagedir, ptr) == NULL)
+    sys_exit(-1);
+
+  // Validations 2: ptr+3 still in user space and in allocated page
+  uint8_t* ptr_end = (uint8_t*) ptr + 3;
+  if (!is_user_vaddr (ptr_end) || pagedir_get_page(cur->pagedir, ptr_end) == NULL)
+    sys_exit(-1);
+}
+
+/* Helper function to read arguments from stack */
+void
+get_user (uint32_t *dst, uint32_t *usrc)
+{
+  validate_ptr (usrc);  
   *dst = *usrc;
-  return true;
 }

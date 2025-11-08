@@ -99,6 +99,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    
     uint32_t exit_status;               /* Exit status of the process */
 
     struct file *fd_table[128];        /* File descriptor table */
