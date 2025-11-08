@@ -51,10 +51,13 @@ process_execute (const char *file_name)
       break;
   }
   program_name[i] = '\0';
-    
   tid = thread_create (program_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  
+  struct thread *child = thread_by_tid(tid);
+  list_push_back(&thread_current ()->child_list, &child->child_elem);
+  
   return tid;
 }
 
@@ -64,13 +67,14 @@ static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
+  struct thread *cur = thread_current ();
+
+  struct intr_frame if_;
+  bool success;
   
   // defined for argument parsing
   char **argv;
   int argc;
-  
-  struct intr_frame if_;
-  bool success;
 
 
   /* Initialize interrupt frame and load executable. */
@@ -88,9 +92,14 @@ start_process (void *file_name_)
   argc = argument_parse(file_name, argv);
   success = load (argv[0], &if_.eip, &if_.esp);
 
+  /* Info to pass to parent */
+  cur->load_success = success;
+  sema_up(&cur->load_sema);
+  
   if (!success) {
     palloc_free_page (argv);
     palloc_free_page (file_name);
+    sema_down(&cur->zombie_sema);
     thread_exit ();
   } 
 
@@ -179,14 +188,35 @@ void argument_push(void **esp, int argc, char **argv)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
+  struct thread *cur = thread_current ();
+  struct thread *child = NULL;
+  struct list_elem *e;
+
+  // If child_tid is not in our child list, end early
+  for (e = list_begin (&cur->child_list); e != list_end (&cur->child_list); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, child_elem);
+    if (t->tid == child_tid) {
+      child = t;
+    }
+  }
+  if (child == NULL) return -1;
+  
+  // Retrieve exit code
+  sema_down (&child->wait_sema);
+  int exit_code = child->exit_status;
+  sema_up (&child->zombie_sema);
+  
+  // Remove child from child list
+  list_remove (&child->child_elem);
+  return exit_code;
+  /*
   int i, j;
   for (i = 0; i < 70000; i++){
     for (j = 0; j < 50000; j++);
   }
-  // while(true);  // Advise from the docs p.28: For now, change process_wait() to an infinite loop
-  return -1;
+  */
 }
 
 /* Free the current process's resources. */

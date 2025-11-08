@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -17,6 +19,7 @@ enum thread_status
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+typedef int pid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -99,10 +102,20 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    
-    uint32_t exit_status;               /* Exit status of the process */
 
-    struct list fd_table;         /* List of open files. Elements are (fd, open_file) tuple structs */
+    /* For exec */
+    struct list child_list;             /* Parent-owned child list */
+    struct list_elem child_elem;        /* Child-owned. */
+    struct semaphore load_sema;         /* Child-owned. Parent does down, child does up */
+    bool load_success;                  /* Child-owned; load success status of child */
+
+    /* For wait */
+    int exit_status;                         /* Exit status of the process */
+    struct semaphore wait_sema;              /* Child-owned. parent waits for child to terminate */
+    struct semaphore zombie_sema;            /* Child-owned. child waits for parent to reap it */
+
+    /* For file syscalls */
+    struct list fd_table;               /* List of open files. Elements are (fd, open_file) tuple structs */
     int next_fd;                        /* Next available file descriptor */
 #endif
 
@@ -133,6 +146,8 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+
+struct thread *thread_by_tid (tid_t target);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
