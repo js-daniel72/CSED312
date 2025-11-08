@@ -466,7 +466,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   #ifdef USERPROG
     t->next_fd = 2;     // Skip 0 and 1, they're designated
-    list_init(&t->open_file_list);
+    list_init(&t->fd_table);
   #endif
 
   old_level = intr_disable ();
