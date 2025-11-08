@@ -465,6 +465,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
 
   #ifdef USERPROG
+    list_init(&t->child_list);
+    sema_init(&t->load_sema, 0);
+    t->load_success = false;
+
+    t->exit_status = -1; // Default to -1, in case of kernel termination
+    sema_init(&t->wait_sema, 0);
+    sema_init(&t->zombie_sema, 0);
+
     t->next_fd = 2;     // Skip 0 and 1, they're designated
     list_init(&t->fd_table);
   #endif
@@ -582,6 +590,21 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+struct thread *thread_by_tid (tid_t target) {
+  enum intr_level old = intr_disable ();
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    if (t->tid == target) {
+      intr_set_level (old);
+      return t;
+    }
+  }
+  intr_set_level (old);
+  return NULL;
 }
 
 /* Offset of `stack' member within `struct thread'.

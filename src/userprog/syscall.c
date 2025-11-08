@@ -42,6 +42,9 @@ void get_user (uint32_t *dst, uint32_t *usrc);
 void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) */
 
 void sys_exit (int status);
+pid_t sys_exec (const char *cmd_line);
+int sys_wait (pid_t pid);
+
 bool sys_create (const char *file, unsigned initial_size);
 int sys_open (const char *file);
 void sys_close (int fd);
@@ -66,23 +69,19 @@ syscall_handler (struct intr_frame *f)
   
   switch (syscall_number) {
     case SYS_HALT:
-    {
       shutdown_power_off();
       break;
-    }
-    
     case SYS_EXIT:
-    {
       get_user (&arg1, (uint32_t *) f->esp + 1 );
       sys_exit(arg1);
       break;
-    }
     case SYS_EXEC:
-      // TODO: Implement sys_exec
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      f->eax = sys_exec ((const char *)arg1);
       break;
-
     case SYS_WAIT:
-      // TODO: Implement sys_wait
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      f->eax = sys_wait ((pid_t)arg1);
       break;
 
 
@@ -152,11 +151,38 @@ sys_exit (int status)
 
   printf ("%s: exit(%d)\n", cur->name, status);
 
+  // Zombie process
+  sema_up(&cur->wait_sema);
+  sema_down(&cur->zombie_sema);
+
   thread_exit ();
 }
 
+pid_t
+sys_exec (const char *cmd_line)
+{
+  validate_ptr(cmd_line);
 
+  // Create new child process
+  tid_t child_tid = process_execute(cmd_line);
+  if (child_tid == TID_ERROR) return -1;
 
+  // Wait until child load finishes (thread_by_tid may be buggy)
+  struct thread *cur = thread_current();
+  struct thread *child = thread_by_tid(child_tid);
+  sema_down(&child->load_sema);
+
+  // If child loaded, push it to parent's child list and return tid
+  if(child->load_success) return (pid_t) child_tid;
+  list_remove (&child->child_elem);
+  sema_up(&child->zombie_sema);
+  return -1;
+}
+
+int sys_wait (pid_t pid)
+{
+  return process_wait((tid_t) pid);
+}
 
 int
 sys_write (int fd, const void *buffer, unsigned size)
