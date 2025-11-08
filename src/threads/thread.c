@@ -464,6 +464,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  #ifdef USERPROG
+    t->next_fd = 2;     // Skip 0 and 1, they're designated
+    list_init(&t->open_file_list);
+  #endif
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);

@@ -182,7 +182,7 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   int i, j;
-  for (i = 0; i < 50000; i++){
+  for (i = 0; i < 70000; i++){
     for (j = 0; j < 50000; j++);
   }
   // while(true);  // Advise from the docs p.28: For now, change process_wait() to an infinite loop

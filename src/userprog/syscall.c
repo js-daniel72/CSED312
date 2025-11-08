@@ -4,6 +4,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 #include "userprog/syscall.h"
 #include "userprog/process.h"
@@ -23,6 +24,7 @@ void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) 
 
 void sys_exit (int status);
 bool sys_create (const char *file, unsigned initial_size);
+int sys_open (const char *file);
 int sys_write (int fd, const void *buffer, unsigned size);
 
 
@@ -72,7 +74,9 @@ syscall_handler (struct intr_frame *f)
       // TODO: Implement sys_remove
       break;
     case SYS_OPEN:
-      // TODO: Implement sys_open
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      f->eax = sys_open ((const char*)arg1);
+      break;
       break;
     case SYS_FILESIZE:
       // TODO: Implement sys_filesize
@@ -85,7 +89,6 @@ syscall_handler (struct intr_frame *f)
       get_user (&arg1, (uint32_t *) f->esp + 1 );
       get_user (&arg2, (uint32_t *) f->esp + 2 );
       get_user (&arg3, (uint32_t *) f->esp + 3 );
-
       f->eax = sys_write ((int)arg1, (const void *)arg2, arg3);
       break;
     }
@@ -124,50 +127,55 @@ sys_exit (int status)
   thread_exit ();
 }
 
+
+
+
 int
 sys_write (int fd, const void *buffer, unsigned size)
 {
-  // TODO: Check if fd, buffer, and size are valid
-  if(fd < 0 || fd > 127)
-    return -1;
+  struct thread *cur = thread_current();
 
+  /* fd must be nonnegative */
+  if(fd < 0)  return -1;
+
+  /* checks on buffer. This doesn't look right, but calling validate_ptr won't work;
+     I don't think we need word-aligned checking.
+     will leave as is for now
+  */
   if(buffer == NULL || !is_user_vaddr(buffer))
     sys_exit(-1);
   if(size > 0 && !is_user_vaddr((uint8_t *)buffer + size - 1)){
     sys_exit(-1);
   }
   if(fd == 0){
-    return 0;  // write을 불러놓고 stdin을 하려고 하면 0? -1? 
+    return 0;  // edge case; not sure how to resolve (0 is supposed to be std *in*)
   }
 
 
+  /* stdout case */
   if(fd == 1){
-    // TODO: writes to the console using putbuf
-    lock_acquire(&file_lock);  // putbuf에 lock이 있긴 함.. 필요 없을지도?
+    lock_acquire(&file_lock);
     putbuf(buffer, size);
     lock_release(&file_lock);
     return size;
   }
+  return -1;
 
-  // TODO: Write to file at fd position
-  struct thread *cur = thread_current();
+  /* general case */
+  /*
   lock_acquire(&file_lock);
-  struct file *f = cur->fd_table[fd];
-  if(f == NULL){
+  struct file *f = // in open_file_list, return open_file of element whose fd matches input
+  if(f == NULL)
+  {
     lock_release(&file_lock);
     return -1;
   }
-
   off_t bytes_written = file_write(f, buffer, size);
   lock_release(&file_lock);
 
   return (int)bytes_written;
+  */
 }
-
-
-
-
-
 
 
 bool
@@ -177,6 +185,55 @@ sys_create (const char* file, unsigned initial_size)
   validate_ptr(file);
   return filesys_create(file, initial_size);
 }
+
+/* Struct for elements */
+
+struct fd_to_open_file {
+  int fd;
+  struct file *open_file;
+  struct list_elem elem;
+};
+
+int
+sys_open (const char *file)
+{
+  struct thread *cur = thread_current ();
+  struct fd_to_open_file *fde;
+  struct file *f;
+  int fd;
+
+  validate_ptr(file);
+
+  /* Weird name */
+  if (file == NULL) return -1;
+
+  lock_acquire(&file_lock);
+  f = filesys_open (file);
+  lock_release(&file_lock);
+
+  /* Open failed */
+  if (f == NULL) return -1;
+
+  fde = malloc (sizeof *fde);
+  if (fde == NULL)
+  {
+    file_close (f);
+    return -1;
+  }
+
+  fd = cur->next_fd++;
+  fde->fd = fd;
+  fde->open_file = f;
+  list_push_back (&cur->open_file_list, &fde->elem);
+
+  return fd;
+}
+
+
+
+
+
+
 
 
 /* EXITS when ptr is invalid, and continues if valid */
