@@ -102,7 +102,7 @@ struct thread
     
     uint32_t exit_status;               /* Exit status of the process */
 
-    struct list open_file_list;         /* List of open files. Elements are (fd, open_file) tuple structs */
+    struct list fd_table;         /* List of open files. Elements are (fd, open_file) tuple structs */
     int next_fd;                        /* Next available file descriptor */
 #endif
 

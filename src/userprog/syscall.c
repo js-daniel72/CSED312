@@ -18,6 +18,23 @@
 
 static struct lock file_lock;  /* Lock for file operations */
 
+
+struct file_handle {
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+};
+
+/* Helper functions that retrieve struct file from fd or file */
+struct file_handle *lookup_handle_by_fd (int fd);
+struct file_handle *lookup_handle_by_file (const struct file *f);
+
+/* Helper functions that convert fd and file */
+struct file *fd_to_file (int fd);
+int file_to_fd (const struct file *f);
+
+
+
 static void syscall_handler (struct intr_frame *);
 void get_user (uint32_t *dst, uint32_t *usrc);
 void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) */
@@ -25,6 +42,7 @@ void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) 
 void sys_exit (int status);
 bool sys_create (const char *file, unsigned initial_size);
 int sys_open (const char *file);
+void sys_close (int fd);
 int sys_write (int fd, const void *buffer, unsigned size);
 
 
@@ -77,7 +95,6 @@ syscall_handler (struct intr_frame *f)
       get_user (&arg1, (uint32_t *) f->esp + 1 );
       f->eax = sys_open ((const char*)arg1);
       break;
-      break;
     case SYS_FILESIZE:
       // TODO: Implement sys_filesize
       break;
@@ -99,7 +116,8 @@ syscall_handler (struct intr_frame *f)
       // TODO: Implement sys_tell
       break;
     case SYS_CLOSE:
-      // TODO: Implement sys_close
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      sys_close ((int)arg1);
       break;
 
     /* invalid syscall number */
@@ -164,7 +182,7 @@ sys_write (int fd, const void *buffer, unsigned size)
   /* general case */
   /*
   lock_acquire(&file_lock);
-  struct file *f = // in open_file_list, return open_file of element whose fd matches input
+  struct file *f = // in fd_table, return open_file of element whose fd matches input
   if(f == NULL)
   {
     lock_release(&file_lock);
@@ -186,19 +204,11 @@ sys_create (const char* file, unsigned initial_size)
   return filesys_create(file, initial_size);
 }
 
-/* Struct for elements */
-
-struct fd_to_open_file {
-  int fd;
-  struct file *open_file;
-  struct list_elem elem;
-};
-
 int
 sys_open (const char *file)
 {
   struct thread *cur = thread_current ();
-  struct fd_to_open_file *fde;
+  struct file_handle *fh;
   struct file *f;
   int fd;
 
@@ -214,23 +224,103 @@ sys_open (const char *file)
   /* Open failed */
   if (f == NULL) return -1;
 
-  fde = malloc (sizeof *fde);
-  if (fde == NULL)
+  /* Initializing file_handle, which is an element of fd_table */
+  /* Not sure if malloc is the way to go.... */
+  fh = malloc (sizeof *fh);
+  if (fh == NULL)
   {
     file_close (f);
     return -1;
   }
 
+  /* Make a new fd_table entry and push to the list */
   fd = cur->next_fd++;
-  fde->fd = fd;
-  fde->open_file = f;
-  list_push_back (&cur->open_file_list, &fde->elem);
+  fh->fd = fd;
+  fh->file = f;
+  list_push_back (&cur->fd_table, &fh->elem);
 
   return fd;
 }
 
+void
+sys_close (int fd)
+{
+  /* Must be a valid fd */
+  if (fd < 1) return;
+
+  /* Retrieve handle from fd, and close it */
+  struct file *file = fd_to_file (fd);
+  
+  if (file == NULL) 
+  {
+    return;
+  }
+  lock_acquire (&file_lock);
+  file_close (file);
+  lock_release (&file_lock);
+
+  /* Remove from fd_table */
+  struct file_handle *handle = lookup_handle_by_fd (fd);
+  if (handle == NULL) return;
+  list_remove (&handle->elem);
+}
 
 
+
+
+
+
+
+
+/* ----- START OF fd_table helper functions ----- */
+struct file_handle *
+lookup_handle_by_fd (int fd)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  for (e = list_begin (&cur->fd_table); e != list_end (&cur->fd_table); e = list_next (e))
+  {
+    struct file_handle *handle = list_entry (e, struct file_handle, elem);
+    if (handle->fd == fd)
+      return handle;
+  }
+  return NULL;
+}
+
+
+struct file_handle *
+lookup_handle_by_file (const struct file *f)
+{
+  if (f == NULL) return NULL;
+
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  for (e = list_begin (&cur->fd_table); e != list_end (&cur->fd_table); e = list_next (e))
+  {
+    struct file_handle *handle = list_entry (e, struct file_handle, elem);
+    if (handle->file == f)
+      return handle;
+  }
+  return NULL;
+}
+
+struct file *
+fd_to_file (int fd)
+{
+  if (fd < 1) return NULL;      // 0, 1 are preassigned
+  struct file_handle *h = lookup_handle_by_fd (fd);
+  return h ? h->file : NULL;
+}
+
+int
+file_to_fd (const struct file *f)
+{
+  struct file_handle *h = lookup_handle_by_file (f);
+  return h ? h->fd : -1;
+}
+/* ----- END OF fd_table helper functions ----- */
 
 
 
