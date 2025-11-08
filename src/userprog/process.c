@@ -152,7 +152,6 @@ void argument_push(void **esp, int argc, char **argv)
   {
     sp -= 4;
     *((char **)(sp)) = argv_addresses[i];
-    // Push the address of argv[i]
   }
    
 
@@ -182,7 +181,11 @@ void argument_push(void **esp, int argc, char **argv)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while(true);  // Advise from the docs p.28: For now, change process_wait() to an infinite loop
+  int i, j;
+  for (i = 0; i < 50000; i++){
+    for (j = 0; j < 50000; j++);
+  }
+  // while(true);  // Advise from the docs p.28: For now, change process_wait() to an infinite loop
   return -1;
 }
 
