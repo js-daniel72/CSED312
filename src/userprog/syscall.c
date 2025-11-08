@@ -14,7 +14,9 @@
 #include "filesys/filesys.h"
 
 #include "lib/kernel/console.h"
+
 #include "devices/shutdown.h"
+#include "devices/input.h"
 
 static struct lock file_lock;  /* Lock for file operations */
 
@@ -43,8 +45,9 @@ void sys_exit (int status);
 bool sys_create (const char *file, unsigned initial_size);
 int sys_open (const char *file);
 void sys_close (int fd);
+int sys_filesize (int fd);
 int sys_write (int fd, const void *buffer, unsigned size);
-
+int sys_read (int fd, void *buffer, unsigned size);
 
 void
 syscall_init (void) 
@@ -89,6 +92,7 @@ syscall_handler (struct intr_frame *f)
       f->eax = sys_create ((const char*)arg1, arg2);
       break;
     case SYS_REMOVE:
+      printf("Is Remove reached? \n");
       // TODO: Implement sys_remove
       break;
     case SYS_OPEN:
@@ -96,10 +100,14 @@ syscall_handler (struct intr_frame *f)
       f->eax = sys_open ((const char*)arg1);
       break;
     case SYS_FILESIZE:
-      // TODO: Implement sys_filesize
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      f->eax = sys_filesize ((int)arg1);
       break;
     case SYS_READ:
-      // TODO: Implement sys_read
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      get_user (&arg2, (uint32_t *) f->esp + 2 );
+      get_user (&arg3, (uint32_t *) f->esp + 3 );
+      f->eax = sys_read ((int)arg1, (void *)arg2, arg3);
       break;
     case SYS_WRITE:
     {
@@ -110,9 +118,11 @@ syscall_handler (struct intr_frame *f)
       break;
     }
     case SYS_SEEK:
+      printf("Is Seek reached? \n");
       // TODO: Implement sys_seek
       break;
     case SYS_TELL:
+      printf("Is Tell reached? \n");
       // TODO: Implement sys_tell
       break;
     case SYS_CLOSE:
@@ -151,24 +161,11 @@ sys_exit (int status)
 int
 sys_write (int fd, const void *buffer, unsigned size)
 {
-  struct thread *cur = thread_current();
-
   /* fd must be nonnegative */
   if(fd < 0)  return -1;
 
-  /* checks on buffer. This doesn't look right, but calling validate_ptr won't work;
-     I don't think we need word-aligned checking.
-     will leave as is for now
-  */
-  if(buffer == NULL || !is_user_vaddr(buffer))
-    sys_exit(-1);
-  if(size > 0 && !is_user_vaddr((uint8_t *)buffer + size - 1)){
-    sys_exit(-1);
-  }
-  if(fd == 0){
-    return 0;  // edge case; not sure how to resolve (0 is supposed to be std *in*)
-  }
-
+  /* Not sure about this check.. */
+  validate_ptr(buffer);
 
   /* stdout case */
   if(fd == 1){
@@ -177,24 +174,17 @@ sys_write (int fd, const void *buffer, unsigned size)
     lock_release(&file_lock);
     return size;
   }
-  return -1;
 
   /* general case */
-  /*
-  lock_acquire(&file_lock);
-  struct file *f = // in fd_table, return open_file of element whose fd matches input
-  if(f == NULL)
-  {
-    lock_release(&file_lock);
-    return -1;
-  }
-  off_t bytes_written = file_write(f, buffer, size);
+  struct file *file = fd_to_file (fd);  
+  if (file == NULL) return (-1);
+
+  lock_acquire(&file_lock);  
+  off_t bytes_written = file_write(file, buffer, size);  
   lock_release(&file_lock);
-
+  
   return (int)bytes_written;
-  */
 }
-
 
 bool
 sys_create (const char* file, unsigned initial_size)
@@ -250,11 +240,8 @@ sys_close (int fd)
 
   /* Retrieve handle from fd, and close it */
   struct file *file = fd_to_file (fd);
-  
-  if (file == NULL) 
-  {
-    return;
-  }
+  if (file == NULL) return;
+
   lock_acquire (&file_lock);
   file_close (file);
   lock_release (&file_lock);
@@ -265,7 +252,47 @@ sys_close (int fd)
   list_remove (&handle->elem);
 }
 
+int sys_read (int fd, void *buffer, unsigned size)
+{
+  /* This needn't be word aligned probably */
+  validate_ptr(buffer);
 
+  /* STDIN case */
+  if (fd == 0)
+  {
+    lock_acquire (&file_lock);
+    for (int i = 0; i < (int) size; i++)
+    {
+      ((char*) buffer)[i] = input_getc ();
+    }
+    lock_release (&file_lock);
+    return size;
+  }
+
+  /* General case */
+  /* (STDOUT is definitely not in the fd_table so that case is handled here) */
+  struct file *file = fd_to_file (fd);  
+  if (file == NULL) return (-1);
+
+  lock_acquire (&file_lock);
+  int length = file_read(file, buffer, size);
+  lock_release (&file_lock);
+
+  return length;
+}
+
+int sys_filesize (int fd)
+{
+  int length;
+  if (fd < 1) return -1;
+  struct file *file = fd_to_file(fd);
+  
+  lock_acquire (&file_lock);
+  length = file_length (file);
+  lock_release (&file_lock);
+
+  return length;
+}
 
 
 
