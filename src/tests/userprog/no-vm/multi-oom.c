@@ -66,7 +66,7 @@ consume_some_resources_and_die (int seed)
   consume_some_resources ();
   random_init (seed);
   volatile int *PHYS_BASE = (volatile int *)0xC0000000;
-  printf("This crash is intentional! we are at level %d \n", seed);
+
   switch (random_ulong () % 5)
     {
       case 0:
@@ -160,7 +160,7 @@ main (int argc, char *argv[])
         expected_depth = reached_depth;
       else if (expected_depth != reached_depth)
         fail ("after run %d/%d, expected depth %d, actual depth %d.",
-             i, howmany, expected_depth, reached_depth);
+              i, howmany, expected_depth, reached_depth);
       ASSERT (expected_depth == reached_depth);
     }
 
