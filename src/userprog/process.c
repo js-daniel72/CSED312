@@ -138,6 +138,7 @@ void argument_push(void **esp, int argc, char **argv)
   int str_len;
   char** argv_addresses = palloc_get_page(0); // for step 3
   ASSERT(argv_addresses != NULL);
+
   uint8_t *sp = (uint8_t *)(*esp);
   // Step 1: push the actual strings, and null terminate them
   for (i = argc-1; i >= 0; i--)
@@ -176,6 +177,7 @@ void argument_push(void **esp, int argc, char **argv)
   *(void **)(sp) = NULL;
 
   *esp = sp;
+  palloc_free_page(argv_addresses);
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -233,13 +235,16 @@ process_exit (void)
   uint32_t *pd;
 
   /* Free each file from the fd table */
-  struct list_elem *e;
-  for (e = list_begin (&cur->fd_table); e != list_end (&cur->fd_table); e = list_next (e))
+  struct list_elem *e = list_begin(&cur->fd_table);
+  while (e != list_end(&cur->fd_table))
   {
-    struct file_handle *h = list_entry (e, struct file_handle, elem);
+    struct file_handle *h = list_entry(e, struct file_handle, elem);
+    e = list_remove(&h->elem);
+
     if (h->file != NULL)
-      file_close (h->file);
-    list_remove (&h->elem);
+      file_close(h->file);
+
+    free(h);
   }
 
   /* Destroy the current process's page directory and switch back
