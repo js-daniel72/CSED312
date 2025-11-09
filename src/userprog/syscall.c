@@ -42,8 +42,8 @@ void get_user (uint32_t *dst, uint32_t *usrc);
 void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) */
 
 void sys_exit (int status);
-pid_t sys_exec (const char *cmd_line);
-int sys_wait (pid_t pid);
+tid_t sys_exec (const char *cmd_line);
+int sys_wait (tid_t tid);
 
 bool sys_create (const char *file, unsigned initial_size);
 bool sys_remove (const char *file);
@@ -84,7 +84,7 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_WAIT:
       get_user (&arg1, (uint32_t *) f->esp + 1 );
-      f->eax = sys_wait ((pid_t)arg1);
+      f->eax = sys_wait ((tid_t)arg1);
       break;
 
 
@@ -169,7 +169,7 @@ sys_exit (int status)
   thread_exit ();
 }
 
-pid_t
+tid_t
 sys_exec (const char *cmd_line)
 {
   validate_ptr(cmd_line);
@@ -184,15 +184,16 @@ sys_exec (const char *cmd_line)
 
   // If child failed to load, remove it from child list
   // NOTE: adding to child list happens in process_execute(), right after the call to thread_create()
-  if(child->load_success) return (pid_t) child_tid;
+  if(child->load_success) return child_tid;
   list_remove (&child->child_elem);
   sema_up(&child->zombie_sema);
   return -1;
 }
 
-int sys_wait (pid_t pid)
+int
+sys_wait (tid_t tid)
 {
-  return process_wait((tid_t) pid);
+  return process_wait(tid);
 }
 
 
