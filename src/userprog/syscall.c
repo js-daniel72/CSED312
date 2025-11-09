@@ -179,7 +179,6 @@ sys_exec (const char *cmd_line)
   if (child_tid == TID_ERROR) return -1;
 
   // Wait until child load finishes (thread_by_tid may be buggy)
-  struct thread *cur = thread_current();
   struct thread *child = thread_by_tid(child_tid);
   sema_down(&child->load_sema);
 
@@ -230,9 +229,13 @@ sys_write (int fd, const void *buffer, unsigned size)
 bool
 sys_create (const char* file, unsigned initial_size)
 {
-  if (file == NULL) sys_exit(-1);
   validate_ptr(file);
-  return filesys_create(file, initial_size);
+  
+  lock_acquire (&file_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release (&file_lock);
+
+  return success;
 }
 
 int
@@ -244,13 +247,10 @@ sys_open (const char *file)
   int fd;
 
   validate_ptr(file);
-
-  /* Weird name */
-  if (file == NULL) return -1;
-
-  lock_acquire(&file_lock);
+  
+  lock_acquire (&file_lock);
   f = filesys_open (file);
-  lock_release(&file_lock);
+  lock_release (&file_lock);
 
   /* Open failed */
   if (f == NULL) return -1;
@@ -346,7 +346,8 @@ sys_seek (int fd, unsigned position)
   if (fd < 1) return;
 
   struct file* file = fd_to_file(fd);
-
+  if (file == NULL) return;
+  
   lock_acquire(&file_lock);
   file_seek (file, position);
   lock_release(&file_lock);
@@ -356,7 +357,7 @@ unsigned
 sys_tell (int fd)
 {
   off_t pos = 0;
-  
+
   struct file *file = fd_to_file(fd);
 
   lock_acquire (&file_lock);
