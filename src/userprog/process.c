@@ -435,7 +435,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
-
+  
+  /* If load succeeded, deny writes to it. */
+  t->executable = filesys_open (file_name);
+  file_deny_write (t->executable);
+  // printf("%s load successful \n", t->name);
   success = true;
 
  done:
