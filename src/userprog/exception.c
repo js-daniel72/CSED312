@@ -5,6 +5,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -89,9 +92,25 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
-      thread_exit (); 
 
-    case SEL_KCSEG:
+      
+      /* Copied the entirety of sys_exit. Didn't think calling a syscall handler would be good. */
+      /* May do some refactoring later to combine the two functions into one helper function */
+      struct thread *cur = thread_current ();
+      cur->exit_status = -1;
+      printf ("%s: exit(%d)\n", cur->name, cur->exit_status);
+      if(cur->executable != NULL)
+      {  
+         file_allow_write (cur->executable);
+         file_close (cur->executable);
+         cur->executable = NULL;
+      }
+      sema_up(&cur->wait_sema);
+      sema_down(&cur->zombie_sema);
+      thread_exit ();
+      
+
+   case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
          Kernel code shouldn't throw exceptions.  (Page faults
          may cause kernel exceptions--but they shouldn't arrive
