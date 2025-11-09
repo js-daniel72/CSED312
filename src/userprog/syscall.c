@@ -46,9 +46,11 @@ pid_t sys_exec (const char *cmd_line);
 int sys_wait (pid_t pid);
 
 bool sys_create (const char *file, unsigned initial_size);
+bool sys_remove (const char *file);
 int sys_open (const char *file);
 void sys_close (int fd);
 int sys_filesize (int fd);
+unsigned sys_tell (int fd);
 int sys_write (int fd, const void *buffer, unsigned size);
 int sys_read (int fd, void *buffer, unsigned size);
 void sys_seek (int fd, unsigned position);
@@ -92,8 +94,8 @@ syscall_handler (struct intr_frame *f)
       f->eax = sys_create ((const char*)arg1, arg2);
       break;
     case SYS_REMOVE:
-      printf("Is Remove reached? \n");
-      // TODO: Implement sys_remove
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      f->eax = sys_remove ((const char*)arg1);
       break;
     case SYS_OPEN:
       get_user (&arg1, (uint32_t *) f->esp + 1 );
@@ -123,8 +125,8 @@ syscall_handler (struct intr_frame *f)
       sys_seek ((int)arg1, (unsigned)arg2);
       break;
     case SYS_TELL:
-      printf("Is Tell reached? \n");
-      // TODO: Implement sys_tell
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      f->eax = sys_tell ((int)arg1);
       break;
     case SYS_CLOSE:
       get_user (&arg1, (uint32_t *) f->esp + 1 );
@@ -181,7 +183,8 @@ sys_exec (const char *cmd_line)
   struct thread *child = thread_by_tid(child_tid);
   sema_down(&child->load_sema);
 
-  // If child loaded, push it to parent's child list and return tid
+  // If child failed to load, remove it from child list
+  // NOTE: adding to child list happens in process_execute(), right after the call to thread_create()
   if(child->load_success) return (pid_t) child_tid;
   list_remove (&child->child_elem);
   sema_up(&child->zombie_sema);
@@ -192,6 +195,9 @@ int sys_wait (pid_t pid)
 {
   return process_wait((tid_t) pid);
 }
+
+
+
 
 int
 sys_write (int fd, const void *buffer, unsigned size)
@@ -346,7 +352,31 @@ sys_seek (int fd, unsigned position)
   lock_release(&file_lock);
 }
 
+unsigned
+sys_tell (int fd)
+{
+  off_t pos = 0;
+  
+  struct file *file = fd_to_file(fd);
 
+  lock_acquire (&file_lock);
+  pos = file_tell (file);
+  lock_release (&file_lock);
+  
+  return pos;
+}
+
+bool
+sys_remove (const char *file)
+{
+  bool success = false;
+
+  lock_acquire (&file_lock);
+  success = filesys_remove (file);
+  lock_release (&file_lock);
+
+  return success;
+}
 
 
 
