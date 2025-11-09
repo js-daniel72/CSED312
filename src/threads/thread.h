@@ -117,6 +117,9 @@ struct thread
     /* For file syscalls */
     struct list fd_table;               /* List of open files. Elements are (fd, open_file) tuple structs */
     int next_fd;                        /* Next available file descriptor */
+
+    /* Deny writes to executables */
+    struct file *executable;
 #endif
 
     /* Owned by thread.c. */

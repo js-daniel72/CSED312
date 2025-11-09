@@ -51,6 +51,7 @@ void sys_close (int fd);
 int sys_filesize (int fd);
 int sys_write (int fd, const void *buffer, unsigned size);
 int sys_read (int fd, void *buffer, unsigned size);
+void sys_seek (int fd, unsigned position);
 
 void
 syscall_init (void) 
@@ -117,8 +118,9 @@ syscall_handler (struct intr_frame *f)
       break;
     }
     case SYS_SEEK:
-      printf("Is Seek reached? \n");
-      // TODO: Implement sys_seek
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      get_user (&arg2, (uint32_t *) f->esp + 2 );
+      sys_seek ((int)arg1, (unsigned)arg2);
       break;
     case SYS_TELL:
       printf("Is Tell reached? \n");
@@ -152,6 +154,13 @@ sys_exit (int status)
   printf ("%s: exit(%d)\n", cur->name, status);
 
   // Zombie process
+  if(cur->executable != NULL)
+  {  
+    file_allow_write (cur->executable);
+    file_close (cur->executable);
+    // printf("allowed writes again from %s \n", cur->name);
+    cur->executable = NULL;
+  }
   sema_up(&cur->wait_sema);
   sema_down(&cur->zombie_sema);
 
@@ -245,7 +254,9 @@ sys_open (const char *file)
   fh = malloc (sizeof *fh);
   if (fh == NULL)
   {
+    lock_acquire(&file_lock);
     file_close (f);
+    lock_release(&file_lock);
     return -1;
   }
 
@@ -278,7 +289,8 @@ sys_close (int fd)
   list_remove (&handle->elem);
 }
 
-int sys_read (int fd, void *buffer, unsigned size)
+int
+sys_read (int fd, void *buffer, unsigned size)
 {
   /* This needn't be word aligned probably */
   validate_ptr(buffer);
@@ -307,7 +319,8 @@ int sys_read (int fd, void *buffer, unsigned size)
   return length;
 }
 
-int sys_filesize (int fd)
+int
+sys_filesize (int fd)
 {
   int length;
   if (fd < 1) return -1;
@@ -320,6 +333,18 @@ int sys_filesize (int fd)
   return length;
 }
 
+void
+sys_seek (int fd, unsigned position)
+{
+  // Don't do anything for stdout and stdin
+  if (fd < 1) return;
+
+  struct file* file = fd_to_file(fd);
+
+  lock_acquire(&file_lock);
+  file_seek (file, position);
+  lock_release(&file_lock);
+}
 
 
 

@@ -475,6 +475,8 @@ init_thread (struct thread *t, const char *name, int priority)
 
     t->next_fd = 2;     // Skip 0 and 1, they're designated
     list_init(&t->fd_table);
+
+    t->executable = NULL;
   #endif
 
   old_level = intr_disable ();
