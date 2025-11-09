@@ -219,12 +219,28 @@ process_wait (tid_t child_tid)
   */
 }
 
+struct file_handle {
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+};
+
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /* Free each file from the fd table */
+  struct list_elem *e;
+  for (e = list_begin (&cur->fd_table); e != list_end (&cur->fd_table); e = list_next (e))
+  {
+    struct file_handle *h = list_entry (e, struct file_handle, elem);
+    if (h->file != NULL)
+      file_close (h->file);
+    list_remove (&h->elem);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

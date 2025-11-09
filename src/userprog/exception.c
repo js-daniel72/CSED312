@@ -93,7 +93,7 @@ kill (struct intr_frame *f)
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
 
-      
+
       /* Copied the entirety of sys_exit. Didn't think calling a syscall handler would be good. */
       /* May do some refactoring later to combine the two functions into one helper function */
       struct thread *cur = thread_current ();
