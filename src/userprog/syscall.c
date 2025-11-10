@@ -299,7 +299,9 @@ sys_close (int fd)
   /* Remove from fd_table */
   struct file_handle *handle = lookup_handle_by_fd (fd);
   if (handle == NULL) return;
+  
   list_remove (&handle->elem);
+  free(handle);
 }
 
 int
@@ -364,8 +366,10 @@ unsigned
 sys_tell (int fd)
 {
   off_t pos = 0;
+  if (fd < 1) return;
 
   struct file *file = fd_to_file(fd);
+  if (file == NULL) return -1;
 
   lock_acquire (&file_lock);
   pos = file_tell (file);
@@ -377,6 +381,7 @@ sys_tell (int fd)
 bool
 sys_remove (const char *file)
 {
+  validate_ptr (file);
   bool success = false;
 
   lock_acquire (&file_lock);
