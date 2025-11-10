@@ -208,10 +208,9 @@ process_wait (tid_t child_tid)
   // Retrieve exit code
   sema_down (&child->wait_sema);
   int exit_code = child->exit_status;
+  list_remove (&child->child_elem);
   sema_up (&child->zombie_sema);
   
-  // Remove child from child list
-  list_remove (&child->child_elem);
   return exit_code;
   /*
   int i, j;
