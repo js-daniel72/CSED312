@@ -29,11 +29,9 @@ struct file_handle {
 
 /* Helper functions that retrieve struct file from fd or file */
 struct file_handle *lookup_handle_by_fd (int fd);
-struct file_handle *lookup_handle_by_file (const struct file *f);
 
 /* Helper functions that convert fd and file */
 struct file *fd_to_file (int fd);
-int file_to_fd (const struct file *f);
 
 
 
@@ -406,24 +404,6 @@ lookup_handle_by_fd (int fd)
   return NULL;
 }
 
-
-struct file_handle *
-lookup_handle_by_file (const struct file *f)
-{
-  if (f == NULL) return NULL;
-
-  struct thread *cur = thread_current ();
-  struct list_elem *e;
-
-  for (e = list_begin (&cur->fd_table); e != list_end (&cur->fd_table); e = list_next (e))
-  {
-    struct file_handle *handle = list_entry (e, struct file_handle, elem);
-    if (handle->file == f)
-      return handle;
-  }
-  return NULL;
-}
-
 struct file *
 fd_to_file (int fd)
 {
@@ -432,12 +412,6 @@ fd_to_file (int fd)
   return h ? h->file : NULL;
 }
 
-int
-file_to_fd (const struct file *f)
-{
-  struct file_handle *h = lookup_handle_by_file (f);
-  return h ? h->fd : -1;
-}
 /* ----- END OF fd_table helper functions ----- */
 
 
