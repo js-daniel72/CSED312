@@ -160,9 +160,17 @@ sys_exit (int status)
   {  
     file_allow_write (cur->executable);
     file_close (cur->executable);
-    // printf("allowed writes again from %s \n", cur->name);
     cur->executable = NULL;
   }
+
+  // For all children in the list, up the zombie_sema, so if child terminates after parent it doesn't linger
+  // Assumes that every process will terminate eventually.
+  for (struct list_elem *e = list_begin (&cur->child_list); e != list_end (&cur->child_list); e = list_next (e))
+  {
+      struct thread *c = list_entry (e, struct thread, child_elem);
+      sema_up (&c->zombie_sema);
+  }
+
   sema_up(&cur->wait_sema);
   sema_down(&cur->zombie_sema);
 
