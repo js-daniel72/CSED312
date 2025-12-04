@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/fd.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -219,12 +220,6 @@ process_wait (tid_t child_tid)
   }
   */
 }
-
-struct file_handle {
-  int fd;
-  struct file *file;
-  struct list_elem elem;
-};
 
 /* Free the current process's resources. */
 void
@@ -625,10 +620,8 @@ process_cleanup (int exit_status)
 
   printf ("%s: exit(%d)\n", cur->name, exit_status);
 
-  // Zombie process
   if(cur->executable != NULL)
-  {  
-    file_allow_write (cur->executable);
+  {
     file_close (cur->executable);
     cur->executable = NULL;
   }
@@ -641,6 +634,7 @@ process_cleanup (int exit_status)
       sema_up (&c->zombie_sema);
   }
 
+  // Wake up parent, then become a zombie
   sema_up(&cur->wait_sema);
   sema_down(&cur->zombie_sema);
 

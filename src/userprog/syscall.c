@@ -9,6 +9,7 @@
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/fd.h"
 
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -17,23 +18,6 @@
 
 #include "devices/shutdown.h"
 #include "devices/input.h"
-
-static struct lock file_lock;  /* Lock for file operations */
-
-
-struct file_handle {
-  int fd;
-  struct file *file;
-  struct list_elem elem;
-};
-
-/* Helper functions that retrieve struct file from fd or file */
-struct file_handle *lookup_handle_by_fd (int fd);
-
-/* Helper functions that convert fd and file */
-struct file *fd_to_file (int fd);
-
-
 
 static void syscall_handler (struct intr_frame *);
 void get_user (uint32_t *dst, uint32_t *usrc);
@@ -365,34 +349,6 @@ sys_remove (const char *file)
 
   return success;
 }
-
-
-
-/* ----- START OF fd_table helper functions ----- */
-struct file_handle *
-lookup_handle_by_fd (int fd)
-{
-  struct thread *cur = thread_current ();
-  struct list_elem *e;
-
-  for (e = list_begin (&cur->fd_table); e != list_end (&cur->fd_table); e = list_next (e))
-  {
-    struct file_handle *handle = list_entry (e, struct file_handle, elem);
-    if (handle->fd == fd)
-      return handle;
-  }
-  return NULL;
-}
-
-struct file *
-fd_to_file (int fd)
-{
-  if (fd < 1) return NULL;      // 0, 1 are preassigned
-  struct file_handle *h = lookup_handle_by_fd (fd);
-  return h ? h->file : NULL;
-}
-
-/* ----- END OF fd_table helper functions ----- */
 
 
 

@@ -1,0 +1,17 @@
+#ifndef USERPROG_FD_H
+#define USERPROG_FD_H
+
+#include <list.h>
+#include "filesys/file.h"
+
+static struct lock file_lock;  /* Lock for file operations */
+
+struct file_handle {
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+};
+
+struct file_handle *lookup_handle_by_fd (int fd);
+struct file *fd_to_file (int fd);
+#endif
