@@ -615,3 +615,34 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+/* Called by sys_exit () syscall handler and user fault handler. */
+void
+process_cleanup (int exit_status)
+{
+  struct thread *cur = thread_current ();
+  cur->exit_status = exit_status;
+
+  printf ("%s: exit(%d)\n", cur->name, exit_status);
+
+  // Zombie process
+  if(cur->executable != NULL)
+  {  
+    file_allow_write (cur->executable);
+    file_close (cur->executable);
+    cur->executable = NULL;
+  }
+
+  // For all children in the list, up the zombie_sema, so if child terminates after parent it doesn't linger
+  // Assumes that every process will terminate eventually.
+  for (struct list_elem *e = list_begin (&cur->child_list); e != list_end (&cur->child_list); e = list_next (e))
+  {
+      struct thread *c = list_entry (e, struct thread, child_elem);
+      sema_up (&c->zombie_sema);
+  }
+
+  sema_up(&cur->wait_sema);
+  sema_down(&cur->zombie_sema);
+
+  thread_exit ();
+}

@@ -5,6 +5,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#include "userprog/process.h"
+
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
@@ -93,26 +95,7 @@ kill (struct intr_frame *f)
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
 
-
-      /* Copied the entirety of sys_exit. Didn't think calling a syscall handler would be good. */
-      /* May do some refactoring later to combine the two functions into one helper function */
-      struct thread *cur = thread_current ();
-      cur->exit_status = -1;
-      printf ("%s: exit(%d)\n", cur->name, cur->exit_status);
-      if(cur->executable != NULL)
-      {  
-         file_allow_write (cur->executable);
-         file_close (cur->executable);
-         cur->executable = NULL;
-      }
-      for (struct list_elem *e = list_begin (&cur->child_list); e != list_end (&cur->child_list); e = list_next (e))
-      {
-         struct thread *c = list_entry (e, struct thread, child_elem);
-         sema_up (&c->zombie_sema);
-      }
-      sema_up(&cur->wait_sema);
-      sema_down(&cur->zombie_sema);
-      thread_exit ();
+      process_cleanup (-1);
       
 
    case SEL_KCSEG:

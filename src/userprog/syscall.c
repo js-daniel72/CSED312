@@ -148,31 +148,7 @@ syscall_handler (struct intr_frame *f)
 void
 sys_exit (int status)
 {
-  struct thread *cur = thread_current ();
-  cur->exit_status = status;
-
-  printf ("%s: exit(%d)\n", cur->name, status);
-
-  // Zombie process
-  if(cur->executable != NULL)
-  {  
-    file_allow_write (cur->executable);
-    file_close (cur->executable);
-    cur->executable = NULL;
-  }
-
-  // For all children in the list, up the zombie_sema, so if child terminates after parent it doesn't linger
-  // Assumes that every process will terminate eventually.
-  for (struct list_elem *e = list_begin (&cur->child_list); e != list_end (&cur->child_list); e = list_next (e))
-  {
-      struct thread *c = list_entry (e, struct thread, child_elem);
-      sema_up (&c->zombie_sema);
-  }
-
-  sema_up(&cur->wait_sema);
-  sema_down(&cur->zombie_sema);
-
-  thread_exit ();
+  process_cleanup (status);
 }
 
 tid_t
@@ -263,7 +239,6 @@ sys_open (const char *file)
   if (f == NULL) return -1;
 
   /* Initializing file_handle, which is an element of fd_table */
-  /* Not sure if malloc is the way to go.... */
   fh = malloc (sizeof *fh);
   if (fh == NULL)
   {
