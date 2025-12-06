@@ -14,4 +14,5 @@ struct file_handle {
 
 struct file_handle *lookup_handle_by_fd (int fd);
 struct file *fd_to_file (int fd);
+void fd_table_destroy (struct list *fd_table);
 #endif

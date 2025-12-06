@@ -230,19 +230,6 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  /* Free each file from the fd table */
-  struct list_elem *e = list_begin(&cur->fd_table);
-  while (e != list_end(&cur->fd_table))
-  {
-    struct file_handle *h = list_entry(e, struct file_handle, elem);
-    e = list_remove(&h->elem);
-
-    if (h->file != NULL)
-      file_close(h->file);
-
-    free(h);
-  }
-
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -665,6 +652,9 @@ process_cleanup (int exit_status)
       sema_up (&c->zombie_sema);
   }
 
+  fd_table_destroy (&cur->fd_table);
+  
+  
   // Wake up parent, then become a zombie
   sema_up(&cur->wait_sema);
   sema_down(&cur->zombie_sema);

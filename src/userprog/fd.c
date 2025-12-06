@@ -24,3 +24,20 @@ fd_to_file (int fd)
   struct file_handle *h = lookup_handle_by_fd (fd);
   return h ? h->file : NULL;
 }
+
+void
+fd_table_destroy (struct list *fd_table)
+{
+  /* Free each file from the fd table */
+  struct list_elem *e = list_begin(fd_table);
+  while (e != list_end(fd_table))
+  {
+    struct file_handle *h = list_entry(e, struct file_handle, elem);
+    e = list_remove(&h->elem);
+
+    if (h->file != NULL)
+      file_close(h->file);
+
+    free(h);
+  }
+}
