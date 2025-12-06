@@ -5,19 +5,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "threads/flags.h"
+#include "threads/init.h"
+#include "threads/interrupt.h"
+#include "threads/malloc.h"
+#include "threads/palloc.h"
+#include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
 #include "userprog/fd.h"
+#include "vm/frame.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
-#include "threads/flags.h"
-#include "threads/init.h"
-#include "threads/interrupt.h"
-#include "threads/palloc.h"
-#include "threads/thread.h"
-#include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -544,24 +546,39 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+      #ifdef VM
+        struct frame* frame = frame_alloc (upage, PAL_USER);
+        if (frame == NULL)
+          return false;
+        uint8_t *kpage = frame->kaddr;
+      #else
+        uint8_t *kpage = palloc_get_page (PAL_USER);
+        if (kpage == NULL)
+          return false;
+      #endif
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          #ifdef VM
+            frame_free (frame);
+          #else
+            palloc_free_page (kpage);
+          #endif
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
-        {
+      {
+        #ifdef VM
+          frame_free (frame);
+        #else
           palloc_free_page (kpage);
-          return false; 
-        }
+        #endif
+        return false; 
+      }
 
       /* Advance. */
       read_bytes -= page_read_bytes;
@@ -579,14 +596,28 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  #ifdef VM
+    struct frame* frame = frame_alloc (((uint8_t *) PHYS_BASE) - PGSIZE, PAL_USER | PAL_ZERO);
+    if (frame == NULL)
+      return false;
+    kpage = frame->kaddr;
+  #else
+    kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  #endif
+  
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = PHYS_BASE;
       else
-        palloc_free_page (kpage);
+      {
+        #ifdef VM
+          frame_free (frame);
+        #else
+          palloc_free_page (kpage);
+        #endif
+      }
     }
   return success;
 }
