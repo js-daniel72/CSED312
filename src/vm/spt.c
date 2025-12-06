@@ -4,7 +4,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-
+#include "threads/vaddr.h"
 #include "vm/spt.h"
 #include "filesys/file.h"
 void
@@ -33,26 +33,32 @@ spt_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED
 struct spt_entry*
 spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
-  struct spt_entry *new_entry = malloc (sizeof (struct spt_entry));
+  uint8_t *uaddr = pg_round_down (upage);
+  if (read_bytes + zero_bytes != PGSIZE)
+    return NULL;
+
+  struct spt_entry *new_entry = malloc (sizeof *new_entry);
   if (new_entry == NULL)
     return NULL;
 
-  new_entry->uaddr = upage;
+  new_entry->uaddr = uaddr;
   new_entry->status = PAGE_LAZY;
   new_entry->file = file;
   new_entry->offset = ofs;
   new_entry->read_bytes = read_bytes;
   new_entry->zero_bytes = zero_bytes;
-  new_entry->writable = writable;
-  new_entry->frame = NULL; // Not loaded yet
-  new_entry->swap_index = 0; // Not in swap
+  new_entry->writable   = writable;
+  new_entry->frame      = NULL;
+  new_entry->swap_index = 0;
 
-  struct hash_elem *existing = hash_find (spt, &new_entry->elem);
-  if (existing != NULL)
-    {
-      free (new_entry);
-      return NULL; // Entry already exists
-    }
+  // Check for existing entry keyed by uaddr
+  struct spt_entry probe;
+  probe.uaddr = uaddr;
+  struct hash_elem *existing = hash_find (spt, &probe.elem);
+  if (existing != NULL) {
+    free (new_entry);
+    return NULL;
+  }
 
   hash_insert (spt, &new_entry->elem);
   return new_entry;
@@ -85,14 +91,12 @@ spt_destroy (struct hash *spt)
   hash_destroy (spt, NULL);
 }
 
-// uaddr must be page-aligned
+
 struct spt_entry*
 spt_lookup (struct hash *spt, void *uaddr)
 {
-  struct spt_entry temp;
-  temp.uaddr = uaddr;
-  struct hash_elem *e = hash_find (spt, &temp.elem);
-  if (e == NULL)
-    return NULL;
-  return hash_entry (e, struct spt_entry, elem);
+  struct spt_entry probe;
+  probe.uaddr = pg_round_down (uaddr);
+  struct hash_elem *e = hash_find (spt, &probe.elem);
+  return e ? hash_entry (e, struct spt_entry, elem) : NULL;
 }
