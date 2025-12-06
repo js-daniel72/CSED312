@@ -17,6 +17,7 @@
 #include "userprog/tss.h"
 #include "userprog/fd.h"
 #include "vm/frame.h"
+#include "vm/spt.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -654,6 +655,9 @@ process_cleanup (int exit_status)
 
   fd_table_destroy (&cur->fd_table);
   
+  #ifdef VM
+    spt_destroy (&cur->s_page_table);
+  #endif
   
   // Wake up parent, then become a zombie
   sema_up(&cur->wait_sema);

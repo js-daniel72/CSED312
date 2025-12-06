@@ -1,6 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include <hash.h>
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -119,6 +120,11 @@ struct thread
 
     /* Deny writes to executables */
     struct file *executable;
+#endif
+
+#ifdef VM
+   /* Owned by vm/spt.c. */
+   struct hash s_page_table;           /* Supplemental page table */
 #endif
 
     /* Owned by thread.c. */

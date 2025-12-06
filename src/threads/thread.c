@@ -1,4 +1,5 @@
 #include "threads/thread.h"
+#include <hash.h>
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
@@ -14,7 +15,9 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
-
+#ifdef VM
+#include "vm/spt.h"
+#endif
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -182,6 +185,12 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+
+  // This somehow has to be outside of init_thread....
+  // hash_init () uses malloc and that causes problems, supposedly.
+  #ifdef VM
+    hash_init (&t->s_page_table, spt_hash, spt_less, NULL);
+  #endif
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);

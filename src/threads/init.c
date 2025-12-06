@@ -33,6 +33,7 @@
 #endif
 #ifdef VM
 #include "vm/frame.h"
+#include "vm/spt.h"
 #endif
 #ifdef FILESYS
 #include "devices/block.h"
@@ -110,6 +111,7 @@ main (void)
 
 #ifdef VM
   frame_init ();
+  spt_init ();
 #endif
 
   /* Initialize interrupt handlers. */
