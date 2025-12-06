@@ -22,7 +22,8 @@ frame_init (void)
 /* Allocates a frame and returns a frame table entry.
    NOTE that uaddr is NOT GUARANTEED TO BE MAPPED YET. (install_page() must be called separately)
 */
-struct frame* frame_alloc (void *uaddr, enum palloc_flags flags)
+struct frame*
+frame_alloc (void *uaddr, enum palloc_flags flags)
 {
   // frame table entry (MUST BE FREED LATER)
   struct frame *new_frame = malloc (sizeof (struct frame));
@@ -49,7 +50,8 @@ struct frame* frame_alloc (void *uaddr, enum palloc_flags flags)
 }
 
 
-void frame_free (struct frame *frame)
+void
+frame_free (struct frame *frame)
 {
   lock_acquire (&frame_table_lock);
   list_remove (&frame->elem);
@@ -60,7 +62,8 @@ void frame_free (struct frame *frame)
 }
 
 
-struct frame* find_frame_by_kaddr (void *kaddr)
+struct frame*
+find_frame_by_kaddr (void *kaddr)
 {
   lock_acquire (&frame_table_lock);
   for (struct list_elem *e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e))
