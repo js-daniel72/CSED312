@@ -1,11 +1,19 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include "threads/vaddr.h"
+#include "debug.h"
+#include "userprog/pagedir.h"
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "threads/palloc.h"
 #include "userprog/process.h"
+
+#include "vm/frame.h"
+#include "vm/spt.h"
 
 #include "filesys/filesys.h"
 #include "filesys/file.h"
@@ -16,6 +24,8 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
+static struct frame* load_page (struct spt_entry *spte);
+static bool install_page (void *upage, void *kpage, bool writable);
 /* Registers handlers for interrupts that can be caused by user
    programs.
 
@@ -156,6 +166,58 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  #ifdef VM
+  // Handle page fault handling with virtual memory
+  {
+    void *upage = pg_round_down (fault_addr);
+
+    // Rights violation: no lazy load possible.
+    if (!not_present) {
+      kill (f);
+      return;
+    }
+
+    // Lookup the supplemental page table entry for the faulting address.
+    struct thread *t = thread_current ();
+    struct spt_entry *spte = spt_lookup (&t->s_page_table, upage);
+    
+    if (spte == NULL) {
+      kill (f);
+      return;
+    }
+
+    struct frame *frame = NULL;
+
+    switch (spte->status) {
+      // Already mapped but got not-present, so treat as error.
+      case PAGE_MEMORY:
+        kill (f);
+        return;
+
+      case PAGE_LAZY:
+      case PAGE_STACK:
+        // Lazy load or stack page.
+        frame = load_page (spte);
+        break;
+
+      case PAGE_SWAP:
+        // TODO: swap-in implementation (not provided here).
+        // Fall through to fatal for now.
+      default:
+        frame = NULL;
+        break;
+    }
+
+    if (frame == NULL) {
+      kill (f);
+      return;
+    }
+
+    // Mark page as active in SPT.
+    spt_activate (spte, frame);
+    return;
+  }
+   #else 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
@@ -165,5 +227,68 @@ page_fault (struct intr_frame *f)
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
+  #endif
 }
 
+// This fully initializes frame table entry
+static struct frame*
+load_page (struct spt_entry *spte)
+{
+  ASSERT (spte != NULL);
+  ASSERT ((spte->read_bytes + spte->zero_bytes) % PGSIZE == 0);
+  ASSERT (pg_ofs (spte->uaddr) == 0);
+  ASSERT (spte->offset % PGSIZE == 0);
+  
+  file_seek (spte->file, spte->offset);
+
+  /* Get a page of memory. */
+  struct frame* frame = frame_alloc (spte->uaddr, PAL_USER);
+  if (frame == NULL)
+    return NULL;
+
+  uint8_t *kpage = frame->kaddr;
+
+  /* Load this page. */
+  // Replace seek+read with position-independent read to avoid races.
+  // If your design uses a global filesys lock, acquire it around file_read_at.
+
+  filesys_lock_acquire ();
+  int nread = file_read (spte->file, kpage, spte->read_bytes);
+  filesys_lock_release ();
+
+  if (nread != (int) spte->read_bytes)
+    {
+      frame_free (frame);
+      return NULL;
+    }
+  memset (kpage + spte->read_bytes, 0, spte->zero_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!install_page (spte->uaddr, kpage, spte->writable))
+    {
+      frame_free (frame);
+      return NULL;
+    }
+
+  return frame;
+}
+
+/* Adds a mapping from user virtual address UPAGE to kernel
+   virtual address KPAGE to the page table.
+   If WRITABLE is true, the user process may modify the page;
+   otherwise, it is read-only.
+   UPAGE must not already be mapped.
+   KPAGE should probably be a page obtained from the user pool
+   with palloc_get_page().
+   Returns true on success, false if UPAGE is already mapped or
+   if memory allocation fails. */
+static bool
+install_page (void *upage, void *kpage, bool writable)
+{
+  struct thread *t = thread_current ();
+
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}

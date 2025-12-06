@@ -426,9 +426,31 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
-                goto done;
+              // Use lazy loading for VM project
+              #ifdef VM
+                off_t ofs = file_page;
+                uint8_t *upage = (uint8_t *) mem_page;
+
+                while (read_bytes > 0 || zero_bytes > 0)
+                {
+                  uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+                  uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+                  if (spt_add_lazy_page (&t->s_page_table, file, ofs, upage,
+                                         page_read_bytes, page_zero_bytes, writable) == NULL)
+                    goto done;
+
+                  // Advance to next page
+                  read_bytes -= page_read_bytes;
+                  zero_bytes -= page_zero_bytes;
+                  ofs += PGSIZE;
+                  upage += PGSIZE;
+                }
+              #else
+                if (!load_segment (file, file_page, (void *) mem_page,
+                                   read_bytes, zero_bytes, writable))
+                  goto done;
+              #endif
             }
           else
             goto done;
@@ -444,14 +466,21 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
   
   /* If load succeeded, deny writes to it. */
-  t->executable = filesys_open (file_name);
+  filesys_lock_acquire ();
+  t->executable = file;
   file_deny_write (t->executable);
+  filesys_lock_release ();
   // printf("%s load successful \n", t->name);
   success = true;
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (!success)
+  {
+    filesys_lock_acquire ();
+    file_close (file);
+    filesys_lock_release ();
+  }
   return success;
 }
 
