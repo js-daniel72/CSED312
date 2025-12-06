@@ -41,7 +41,6 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init (&file_lock);
 }
 
 static void
@@ -176,9 +175,9 @@ sys_write (int fd, const void *buffer, unsigned size)
 
   /* stdout case */
   if(fd == 1){
-    lock_acquire(&file_lock);
+    filesys_lock_acquire ();
     putbuf(buffer, size);
-    lock_release(&file_lock);
+    filesys_lock_release ();
     return size;
   }
 
@@ -186,9 +185,9 @@ sys_write (int fd, const void *buffer, unsigned size)
   struct file *file = fd_to_file (fd);  
   if (file == NULL) return (-1);
 
-  lock_acquire(&file_lock);  
+  filesys_lock_acquire ();  
   off_t bytes_written = file_write(file, buffer, size);  
-  lock_release(&file_lock);
+  filesys_lock_release ();
   
   return (int)bytes_written;
 }
@@ -198,9 +197,9 @@ sys_create (const char* file, unsigned initial_size)
 {
   validate_ptr(file);
   
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   bool success = filesys_create(file, initial_size);
-  lock_release (&file_lock);
+  filesys_lock_release ();
 
   return success;
 }
@@ -215,9 +214,9 @@ sys_open (const char *file)
 
   validate_ptr(file);
   
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   f = filesys_open (file);
-  lock_release (&file_lock);
+  filesys_lock_release ();
 
   /* Open failed */
   if (f == NULL) return -1;
@@ -226,9 +225,9 @@ sys_open (const char *file)
   fh = malloc (sizeof *fh);
   if (fh == NULL)
   {
-    lock_acquire(&file_lock);
+    filesys_lock_acquire ();
     file_close (f);
-    lock_release(&file_lock);
+    filesys_lock_release ();
     return -1;
   }
 
@@ -251,9 +250,9 @@ sys_close (int fd)
   struct file *file = fd_to_file (fd);
   if (file == NULL) return;
 
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   file_close (file);
-  lock_release (&file_lock);
+  filesys_lock_release ();
 
   /* Remove from fd_table */
   struct file_handle *handle = lookup_handle_by_fd (fd);
@@ -272,12 +271,12 @@ sys_read (int fd, void *buffer, unsigned size)
   /* STDIN case */
   if (fd == 0)
   {
-    lock_acquire (&file_lock);
+    filesys_lock_acquire ();
     for (int i = 0; i < (int) size; i++)
     {
       ((char*) buffer)[i] = input_getc ();
     }
-    lock_release (&file_lock);
+    filesys_lock_release ();
     return size;
   }
 
@@ -286,9 +285,9 @@ sys_read (int fd, void *buffer, unsigned size)
   struct file *file = fd_to_file (fd);  
   if (file == NULL) return (-1);
 
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   int length = file_read(file, buffer, size);
-  lock_release (&file_lock);
+  filesys_lock_release ();
 
   return length;
 }
@@ -300,9 +299,9 @@ sys_filesize (int fd)
   if (fd < 1) return -1;
   struct file *file = fd_to_file(fd);
   
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   length = file_length (file);
-  lock_release (&file_lock);
+  filesys_lock_release ();
 
   return length;
 }
@@ -316,9 +315,9 @@ sys_seek (int fd, unsigned position)
   struct file* file = fd_to_file(fd);
   if (file == NULL) return;
   
-  lock_acquire(&file_lock);
+  filesys_lock_acquire ();
   file_seek (file, position);
-  lock_release(&file_lock);
+  filesys_lock_release ();
 }
 
 unsigned
@@ -330,9 +329,9 @@ sys_tell (int fd)
   struct file *file = fd_to_file(fd);
   if (file == NULL) return -1;
 
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   pos = file_tell (file);
-  lock_release (&file_lock);
+  filesys_lock_release ();
   
   return pos;
 }
@@ -343,9 +342,9 @@ sys_remove (const char *file)
   validate_ptr (file);
   bool success = false;
 
-  lock_acquire (&file_lock);
+  filesys_lock_acquire ();
   success = filesys_remove (file);
-  lock_release (&file_lock);
+  filesys_lock_release ();
 
   return success;
 }
@@ -358,6 +357,13 @@ sys_remove (const char *file)
 void
 validate_ptr (void* ptr)
 {
+  // For VM project, force a page fault for invalid accesses that are in user space
+  #ifdef VM
+  uint8_t* ptr_end = (uint8_t*) ptr + 3;
+  if (!is_user_vaddr (ptr) || !is_user_vaddr (ptr_end))
+    sys_exit(-1);
+
+  #else
   struct thread *cur = thread_current ();
 
   // Validations 1: ptr in user space, and in an allocated page
@@ -368,6 +374,7 @@ validate_ptr (void* ptr)
   uint8_t* ptr_end = (uint8_t*) ptr + 3;
   if (!is_user_vaddr (ptr_end) || pagedir_get_page(cur->pagedir, ptr_end) == NULL)
     sys_exit(-1);
+  #endif
 }
 
 /* Helper function to read arguments from stack */

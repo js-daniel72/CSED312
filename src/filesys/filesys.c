@@ -6,9 +6,11 @@
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
 #include "filesys/directory.h"
+#include "threads/synch.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
+static struct lock file_lock;
 
 static void do_format (void);
 
@@ -23,6 +25,8 @@ filesys_init (bool format)
 
   inode_init ();
   free_map_init ();
+
+  lock_init (&file_lock);
 
   if (format) 
     do_format ();
@@ -100,4 +104,16 @@ do_format (void)
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");
+}
+
+void
+filesys_lock_acquire (void)
+{
+  lock_acquire (&file_lock);
+}
+
+void
+filesys_lock_release (void)
+{
+  lock_release (&file_lock);
 }

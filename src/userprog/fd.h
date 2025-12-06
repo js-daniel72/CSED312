@@ -4,8 +4,6 @@
 #include <list.h>
 #include "filesys/file.h"
 
-static struct lock file_lock;  /* Lock for file operations */
-
 struct file_handle {
   int fd;
   struct file *file;

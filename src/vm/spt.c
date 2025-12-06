@@ -1,10 +1,12 @@
 #include <hash.h>
+#include <stdio.h>
 
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
 #include "vm/spt.h"
 #include "filesys/file.h"
 void
@@ -36,7 +38,7 @@ spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upag
   uint8_t *uaddr = pg_round_down (upage);
   if (read_bytes + zero_bytes != PGSIZE)
     return NULL;
-
+  
   struct spt_entry *new_entry = malloc (sizeof *new_entry);
   if (new_entry == NULL)
     return NULL;
@@ -47,8 +49,8 @@ spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upag
   new_entry->offset = ofs;
   new_entry->read_bytes = read_bytes;
   new_entry->zero_bytes = zero_bytes;
-  new_entry->writable   = writable;
-  new_entry->frame      = NULL;
+  new_entry->writable = writable;
+  new_entry->frame = NULL;
   new_entry->swap_index = 0;
 
   // Check for existing entry keyed by uaddr

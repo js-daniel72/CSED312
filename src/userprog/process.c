@@ -355,7 +355,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  filesys_lock_acquire ();
   file = filesys_open (file_name);
+  filesys_lock_release ();
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -516,6 +518,8 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
+
+// In VM, load_segment() is not used because of lazy loading
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
@@ -524,7 +528,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
+  filesys_lock_acquire ();
   file_seek (file, ofs);
+  filesys_lock_release ();
+  
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -534,25 +541,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      #ifdef VM
-        struct frame* frame = frame_alloc (upage, PAL_USER);
-        if (frame == NULL)
-          return false;
-        uint8_t *kpage = frame->kaddr;
-      #else
-        uint8_t *kpage = palloc_get_page (PAL_USER);
-        if (kpage == NULL)
-          return false;
-      #endif
+      uint8_t *kpage = palloc_get_page (PAL_USER);
+      if (kpage == NULL)
+        return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          #ifdef VM
-            frame_free (frame);
-          #else
-            palloc_free_page (kpage);
-          #endif
+          palloc_free_page (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -560,11 +556,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
       {
-        #ifdef VM
-          frame_free (frame);
-        #else
-          palloc_free_page (kpage);
-        #endif
+        palloc_free_page (kpage);
         return false; 
       }
 
@@ -641,8 +633,10 @@ process_cleanup (int exit_status)
 
   if(cur->executable != NULL)
   {
+    filesys_lock_acquire ();
     file_close (cur->executable);
     cur->executable = NULL;
+    filesys_lock_release ();
   }
 
   // For all children in the list, up the zombie_sema, so if child terminates after parent it doesn't linger
@@ -656,7 +650,7 @@ process_cleanup (int exit_status)
   fd_table_destroy (&cur->fd_table);
   
   #ifdef VM
-    spt_destroy (&cur->s_page_table);
+  //  spt_destroy (&cur->s_page_table);
   #endif
   
   // Wake up parent, then become a zombie
