@@ -8,6 +8,7 @@
 #include "threads/vaddr.h"
 #include "vm/frame.h"
 #include "vm/spt.h"
+#include "vm/swap.h"
 #include "filesys/file.h"
 void
 spt_init (void)
@@ -79,12 +80,18 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 {
   struct spt_entry *entry = hash_entry (e, struct spt_entry, elem);
 
+
   // free associated frame table entry
   if (entry->status == PAGE_MEMORY && entry->frame != NULL)
   {
+    entry->frame->pinned = true; // prevent eviction during cleanup
     frame_free (entry->frame);
   }
   // TODO: handle PAGE_MMAP writeback if dirty, PAGE_SWAP release swap slot, etc.
+  if (entry->status == PAGE_SWAP)
+  {
+    swap_free (entry->swap_index);
+  }
 
   free (entry);
 }
