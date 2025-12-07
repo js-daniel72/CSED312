@@ -49,7 +49,8 @@ frame_alloc (void *uaddr, enum palloc_flags flags)
   return new_frame;
 }
 
-
+// NOTE: pagedir_destroy () frees the actual frame memory pages
+// So we only need to free the frame table entry here
 void
 frame_free (struct frame *frame)
 {
@@ -57,7 +58,6 @@ frame_free (struct frame *frame)
   list_remove (&frame->elem);
   lock_release (&frame_table_lock);
 
-  palloc_free_page (frame->kaddr);
   free (frame);
 }
 

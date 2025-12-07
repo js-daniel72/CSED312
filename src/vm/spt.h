@@ -45,5 +45,6 @@ void spt_activate (struct spt_entry *entry, struct frame *frame);
 
 struct spt_entry* spt_lookup (struct hash *spt, void *uaddr);
 void spt_print_all (struct hash *spt);
-void spt_destroy (struct hash *spt);
+void spt_destroy_entry (struct hash_elem *e, void *aux);
+
 #endif

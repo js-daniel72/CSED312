@@ -75,23 +75,20 @@ spt_activate (struct spt_entry *entry, struct frame *frame)
 }
 
 void
-spt_destroy (struct hash *spt)
+spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 {
-  struct hash_iterator i;
-  hash_first (&i, spt);
-  while (hash_next (&i)) {
-    struct spt_entry *entry = hash_entry (hash_cur (&i), struct spt_entry, elem);
+  struct spt_entry *entry = hash_entry (e, struct spt_entry, elem);
 
-    // free associated frame
-    if (entry->status == PAGE_MEMORY && entry->frame) {
-      frame_free (entry->frame);
-    }
-    // TODO: handle PAGE_MMAP writeback if dirty, PAGE_SWAP release swap slot, etc.
-
-    free (entry);
+  // free associated frame table entry
+  if (entry->status == PAGE_MEMORY && entry->frame != NULL)
+  {
+    frame_free (entry->frame);
   }
-  hash_destroy (spt, NULL);
+  // TODO: handle PAGE_MMAP writeback if dirty, PAGE_SWAP release swap slot, etc.
+
+  free (entry);
 }
+
 
 
 struct spt_entry*
