@@ -14,41 +14,64 @@
 
 struct lock frame_table_lock;
 struct list frame_table;
+static struct list_elem *clock_hand;
+
+
+bool frame_lock_held_by_current_thread (void);
+void frame_regrab_lock (bool was_held);
+void evict_frame (void);
 
 void
 frame_init (void)
 {
   lock_init (&frame_table_lock);
   list_init (&frame_table);
+  clock_hand = NULL;
 }
 
-/* Allocates a frame and returns a frame table entry.
+/* Allocates a NEW frame and returns a frame table entry.
    NOTE that uaddr is NOT GUARANTEED TO BE MAPPED YET. (install_page() must be called separately)
 */
 struct frame*
 frame_alloc (void *uaddr, enum palloc_flags flags)
 {
+  // We will hold the lock for the entirety of this function
+  // This is to prevent snatching of evicted frame by other processes
+  bool was_held = frame_lock_held_by_current_thread ();
+  if (!was_held)
+    lock_acquire (&frame_table_lock);
+
+
   // frame table entry (MUST BE FREED LATER)
   struct frame *new_frame = malloc (sizeof (struct frame));
   if (new_frame == NULL)
-    return NULL;
+    {
+      frame_release_lock_if_needed (was_held);
+      return NULL;
+    }
 
   new_frame->kaddr = palloc_get_page (flags);
   if (new_frame->kaddr == NULL)
     {
-      // This means that memory is full.
-      // TODO: Evict a frame here
-      free (new_frame);
-      PANIC ("Evict not implemented yet");
+      // This means that memory is full, so we evict a frame
+      evict_frame ();
+      new_frame->kaddr = palloc_get_page (flags); // This should always work, since we just evicted a frame
+      if (new_frame->kaddr == NULL) // This should never happen since we are holding the lock
+        {
+          printf("SYNCHRONIZATION ERROR >:( >:( >:( >:( >:( >:( >:( >:( >:( >:( \n");
+          free (new_frame);
+          frame_release_lock_if_needed (was_held);
+          return NULL;
+        }
     }
-  
   new_frame->uaddr = uaddr;
   new_frame->owner = thread_current ();
   new_frame->pinned = false;
 
-  lock_acquire (&frame_table_lock);
+
+
   list_push_back (&frame_table, &new_frame->elem);
-  lock_release (&frame_table_lock);
+  frame_release_lock_if_needed (was_held);
 
   return new_frame;
 }
@@ -58,35 +81,101 @@ frame_alloc (void *uaddr, enum palloc_flags flags)
 void
 frame_free (struct frame *frame)
 {
-  lock_acquire (&frame_table_lock);
-  list_remove (&frame->elem);
-  lock_release (&frame_table_lock);
+  bool was_held = frame_lock_held_by_current_thread ();
+  if (!was_held)
+    lock_acquire (&frame_table_lock);
 
+  if (clock_hand == &frame->elem)
+    {
+      clock_hand = list_next (clock_hand);
+    }
+  list_remove (&frame->elem);
   free (frame);
+  
+  frame_release_lock_if_needed (was_held);
 }
 
 
 struct frame*
 find_frame_by_kaddr (void *kaddr)
 {
-  lock_acquire (&frame_table_lock);
+  struct frame *found_frame = NULL;
+  bool was_held = frame_lock_held_by_current_thread ();
+  if (!was_held)
+    lock_acquire (&frame_table_lock);
+
   for (struct list_elem *e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e))
     {
       struct frame *f = list_entry (e, struct frame, elem);
       if (f->kaddr == kaddr)
         {
-          lock_release (&frame_table_lock);
-          return f;
+          found_frame = f;
+          break;
         }
     }
-  lock_release (&frame_table_lock);
-  return NULL;
+  frame_release_lock_if_needed (was_held);
+  return found_frame;
 }
+
+void
+evict_frame (void)
+{
+  ASSERT (lock_held_by_current_thread (&frame_table_lock));
+  // Initialize clock hand if not yet done
+  // The check implicitly assumes that frame_table is not empty, but it is okay
+  // since it is VERY unlikely for the table to be empty when eviction is needed.
+  if (clock_hand == NULL || clock_hand == list_end (&frame_table))
+      clock_hand = list_begin (&frame_table);
+
+  while (true)
+    {
+      struct frame *f = list_entry (clock_hand, struct frame, elem);
+      if (!f->pinned)
+        {
+          // If it was accessed recently, give it a second chance
+          if (pagedir_is_accessed (f->owner->pagedir, f->uaddr))
+            {
+              pagedir_set_accessed (f->owner->pagedir, f->uaddr, false);
+            }
+          // 1. Pick a frame to evict (done)
+          else
+            {
+              // 2. Swap out contents into swap table
+              size_t swap_index = swap_out (f->kaddr);
+              
+              // 3. Unlink spte - frame, and link spte - swap (free frame in the process)
+              struct spt_entry *spte = spt_lookup (&f->owner->s_page_table, f->uaddr);
+              ASSERT (spte != NULL);
+              spte->status = PAGE_SWAP;
+              spte->swap_index = swap_index;
+              spte->frame = NULL;
+
+              // 3. Unmap the page from the page table and free the frame.
+              pagedir_clear_page (f->owner->pagedir, f->uaddr);
+              palloc_free_page (f->kaddr);
+              frame_free (f);
+
+              return;
+            }
+        }
+      
+      // Advance clock hand (end -> begin, so the hand traverses circularly)
+      clock_hand = list_next (clock_hand);
+      if (clock_hand == list_end (&frame_table))
+        {
+          clock_hand = list_begin (&frame_table);
+        }
+    }
+}
+
 
 void
 frame_print_all (void)
 {
-  lock_acquire (&frame_table_lock);
+  bool was_held = frame_lock_held_by_current_thread ();
+  if (!was_held)
+    lock_acquire (&frame_table_lock);
+  
   printf ("---- Frame Table ----\n");
   for (struct list_elem *e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e))
     {
@@ -98,5 +187,24 @@ frame_print_all (void)
               f->pinned ? "true" : "false");
     }
   printf ("---------------------\n");
-  lock_release (&frame_table_lock);
+  frame_release_lock_if_needed (was_held);
+}
+
+
+
+/* Returns true if the current thread is holding the frame table lock. */
+bool
+frame_lock_held_by_current_thread (void)
+{
+  return lock_held_by_current_thread (&frame_table_lock);
+}
+
+/* Releases the frame table lock if it was not held before the current function. */
+void
+frame_release_lock_if_needed (bool was_held)
+{
+  if (!was_held)
+    {
+      lock_release (&frame_table_lock);
+    }
 }

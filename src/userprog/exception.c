@@ -222,7 +222,8 @@ page_fault (struct intr_frame *f)
 
     struct frame *frame = NULL;
 
-    switch (spte->status) {
+    switch (spte->status)
+    {
       // Already mapped but got not-present, so treat as error.
       case PAGE_MEMORY:
         process_cleanup (-1);
@@ -233,19 +234,28 @@ page_fault (struct intr_frame *f)
         if (frame == NULL) {
           process_cleanup (-1);
         }
-        spt_activate (spte, frame);
-        if (lock_was_held)
+        break;
+
+      case PAGE_SWAP:
+        // Allocate frame. If my code is right, this should never fail since we are evicting if necessary inside frame_alloc ()
+        frame = frame_alloc (spte->uaddr, PAL_USER);
+        if (frame == NULL)        // This should never happen in theory
+          process_cleanup (-1);
+
+        swap_in (spte->swap_index, frame->kaddr); // This shouldn't have eviction issues since we just allocated a frame
+        if (!install_page (spte->uaddr, frame->kaddr, spte->writable))
         {
-          filesys_lock_acquire (__func__);
+          frame_free (frame);
+          process_cleanup (-1);
         }
         break;
-      
-      case PAGE_SWAP:
-        // TODO: swap-in implementation (not provided here).
-        // Fall through to fatal for now.
       default:
-        frame = NULL;
-        break;
+        process_cleanup (-1);
+    }
+    spt_activate (spte, frame);
+    if (lock_was_held)
+    {
+      filesys_lock_acquire (__func__);
     }
     return;
   }
@@ -261,6 +271,9 @@ page_fault (struct intr_frame *f)
   kill (f);
   #endif
 }
+
+
+
 
 // This fully initializes frame table entry
 static struct frame*

@@ -5,8 +5,6 @@
 #include "threads/vaddr.h"
 #include "threads/thread.h"
 #include "vm/frame.h"
-#include "vm/swap.h"
-#include "devices/block.h"
 
 static struct block *swap_device;
 static size_t swap_total_pages;
@@ -20,7 +18,7 @@ swap_init (void)
   if (swap_device == NULL)
     PANIC ("No swap device found, can't initialize swap.");
 
-  swap_total_pages = block_size (swap_device) / PGSIZE;
+  swap_total_pages = block_size (swap_device) / (PGSIZE / BLOCK_SECTOR_SIZE);
   swap_bitmap = bitmap_create (swap_total_pages);
   if (swap_bitmap == NULL)
     PANIC ("No memory for swap bitmap, can't initialize swap.");
@@ -63,7 +61,7 @@ void
 swap_free (size_t swap_index)
 {
   lock_acquire (&swap_lock);
-  if (!bitmap_test (swap_bitmap, swap_index))
+  if (bitmap_test (swap_bitmap, swap_index) == false)
     PANIC ("swap_free: trying to free a free swap slot.");
   bitmap_set (swap_bitmap, swap_index, false);
   lock_release (&swap_lock);
