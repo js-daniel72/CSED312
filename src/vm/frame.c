@@ -78,3 +78,21 @@ find_frame_by_kaddr (void *kaddr)
   lock_release (&frame_table_lock);
   return NULL;
 }
+
+void
+frame_print_all (void)
+{
+  lock_acquire (&frame_table_lock);
+  printf ("---- Frame Table ----\n");
+  for (struct list_elem *e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e))
+    {
+      struct frame *f = list_entry (e, struct frame, elem);
+      printf ("Frame kaddr: %p, uaddr: %p, owner: %s, pinned: %s\n",
+              f->kaddr,
+              f->uaddr,
+              f->owner->name,
+              f->pinned ? "true" : "false");
+    }
+  printf ("---------------------\n");
+  lock_release (&frame_table_lock);
+}

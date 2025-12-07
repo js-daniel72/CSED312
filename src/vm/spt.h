@@ -45,6 +45,6 @@ struct spt_entry* spt_add_lazy_page (struct hash *spt, struct file *file, off_t 
 void spt_activate (struct spt_entry *entry, struct frame *frame);
 
 struct spt_entry* spt_lookup (struct hash *spt, void *uaddr);
-
+void spt_print_all (struct hash *spt);
 void spt_destroy (struct hash *spt);
 #endif

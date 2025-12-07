@@ -102,3 +102,15 @@ spt_lookup (struct hash *spt, void *uaddr)
   struct hash_elem *e = hash_find (spt, &probe.elem);
   return e ? hash_entry (e, struct spt_entry, elem) : NULL;
 }
+
+void
+spt_print_all (struct hash *spt)
+{
+  struct hash_iterator i;
+  hash_first (&i, spt);
+  printf("Supplemental Page Table Entries:\n");
+  while (hash_next (&i)) {
+    struct spt_entry *entry = hash_entry (hash_cur (&i), struct spt_entry, elem);
+    printf("  UADDR: %p, STATUS: %d, FRAME: %p\n", entry->uaddr, entry->status, entry->frame);
+  }
+}

@@ -25,4 +25,5 @@ struct frame* frame_alloc (void *uaddr, enum palloc_flags flags);
 void frame_free (struct frame *frame);
 struct frame* find_frame_by_kaddr (void *kaddr);
 
+void frame_print_all (void);
 #endif
