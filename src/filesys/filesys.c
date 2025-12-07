@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
+#include "threads/thread.h"
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
@@ -107,13 +108,15 @@ do_format (void)
 }
 
 void
-filesys_lock_acquire (void)
+filesys_lock_acquire (const char *function)
 {
+  // printf("Acquiring filesys lock from %s (thread: %s)\n", function, thread_current ()->name);
   lock_acquire (&file_lock);
 }
 
 void
-filesys_lock_release (void)
+filesys_lock_release (const char *function)
 {
+  // printf("Releasing filesys lock from %s (thread: %s)\n", function, thread_current ()->name);
   lock_release (&file_lock);
 }

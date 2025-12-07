@@ -355,9 +355,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   file = filesys_open (file_name);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -466,10 +466,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
   
   /* If load succeeded, deny writes to it. */
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   t->executable = file;
   file_deny_write (t->executable);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
   // printf("%s load successful \n", t->name);
   success = true;
 
@@ -477,9 +477,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
   if (!success)
   {
-    filesys_lock_acquire ();
+    filesys_lock_acquire (__func__);
     file_close (file);
-    filesys_lock_release ();
+    filesys_lock_release (__func__);
   }
   return success;
 }
@@ -557,9 +557,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   file_seek (file, ofs);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
   
   while (read_bytes > 0 || zero_bytes > 0) 
     {
@@ -662,10 +662,10 @@ process_cleanup (int exit_status)
 
   if(cur->executable != NULL)
   {
-    filesys_lock_acquire ();
+    filesys_lock_acquire (__func__);
     file_close (cur->executable);
     cur->executable = NULL;
-    filesys_lock_release ();
+    filesys_lock_release (__func__);
   }
 
   // For all children in the list, up the zombie_sema, so if child terminates after parent it doesn't linger

@@ -175,9 +175,9 @@ sys_write (int fd, const void *buffer, unsigned size)
 
   /* stdout case */
   if(fd == 1){
-    filesys_lock_acquire ();
+    filesys_lock_acquire (__func__);
     putbuf(buffer, size);
-    filesys_lock_release ();
+    filesys_lock_release (__func__);
     return size;
   }
 
@@ -185,9 +185,9 @@ sys_write (int fd, const void *buffer, unsigned size)
   struct file *file = fd_to_file (fd);  
   if (file == NULL) return (-1);
 
-  filesys_lock_acquire ();  
+  filesys_lock_acquire (__func__);  
   off_t bytes_written = file_write(file, buffer, size);  
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
   
   return (int)bytes_written;
 }
@@ -197,9 +197,9 @@ sys_create (const char* file, unsigned initial_size)
 {
   validate_ptr(file);
   
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   bool success = filesys_create(file, initial_size);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   return success;
 }
@@ -214,9 +214,9 @@ sys_open (const char *file)
 
   validate_ptr(file);
   
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   f = filesys_open (file);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   /* Open failed */
   if (f == NULL) return -1;
@@ -225,9 +225,9 @@ sys_open (const char *file)
   fh = malloc (sizeof *fh);
   if (fh == NULL)
   {
-    filesys_lock_acquire ();
+    filesys_lock_acquire (__func__);
     file_close (f);
-    filesys_lock_release ();
+    filesys_lock_release (__func__);
     return -1;
   }
 
@@ -250,9 +250,9 @@ sys_close (int fd)
   struct file *file = fd_to_file (fd);
   if (file == NULL) return;
 
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   file_close (file);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   /* Remove from fd_table */
   struct file_handle *handle = lookup_handle_by_fd (fd);
@@ -271,12 +271,12 @@ sys_read (int fd, void *buffer, unsigned size)
   /* STDIN case */
   if (fd == 0)
   {
-    filesys_lock_acquire ();
+    filesys_lock_acquire (__func__);
     for (int i = 0; i < (int) size; i++)
     {
       ((char*) buffer)[i] = input_getc ();
     }
-    filesys_lock_release ();
+    filesys_lock_release (__func__);
     return size;
   }
 
@@ -285,9 +285,9 @@ sys_read (int fd, void *buffer, unsigned size)
   struct file *file = fd_to_file (fd);  
   if (file == NULL) return (-1);
 
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   int length = file_read(file, buffer, size);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   return length;
 }
@@ -299,9 +299,9 @@ sys_filesize (int fd)
   if (fd < 1) return -1;
   struct file *file = fd_to_file(fd);
   
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   length = file_length (file);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   return length;
 }
@@ -315,9 +315,9 @@ sys_seek (int fd, unsigned position)
   struct file* file = fd_to_file(fd);
   if (file == NULL) return;
   
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   file_seek (file, position);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 }
 
 unsigned
@@ -329,9 +329,9 @@ sys_tell (int fd)
   struct file *file = fd_to_file(fd);
   if (file == NULL) return -1;
 
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   pos = file_tell (file);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
   
   return pos;
 }
@@ -342,9 +342,9 @@ sys_remove (const char *file)
   validate_ptr (file);
   bool success = false;
 
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   success = filesys_remove (file);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   return success;
 }

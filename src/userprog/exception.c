@@ -249,12 +249,9 @@ load_page (struct spt_entry *spte)
   uint8_t *kpage = frame->kaddr;
 
   /* Load this page. */
-  // Replace seek+read with position-independent read to avoid races.
-  // If your design uses a global filesys lock, acquire it around file_read_at.
-
-  filesys_lock_acquire ();
+  filesys_lock_acquire (__func__);
   int nread = file_read (spte->file, kpage, spte->read_bytes);
-  filesys_lock_release ();
+  filesys_lock_release (__func__);
 
   if (nread != (int) spte->read_bytes)
     {
