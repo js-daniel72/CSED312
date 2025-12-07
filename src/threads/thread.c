@@ -190,6 +190,7 @@ thread_create (const char *name, int priority,
   // hash_init () uses malloc and that causes problems, supposedly.
   #ifdef VM
     hash_init (&t->s_page_table, spt_hash, spt_less, NULL);
+    list_init (&t->mmap_list);
   #endif
 
   /* Stack frame for kernel_thread(). */

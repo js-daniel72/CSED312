@@ -19,7 +19,7 @@ struct spt_entry
   void *uaddr;                  // user virtual address (key for hash table)
   enum page_status status;      // status of the page
 
-  // for data in physical memory
+  // for PAGE_MEMORY
   struct frame *frame;          // frame the page is loaded into
 
   // for PAGE_LAZY
@@ -28,9 +28,10 @@ struct spt_entry
   size_t read_bytes;            // bytes to read from file
   size_t zero_bytes;            // bytes to be zeroed
 
-  // for data in swap
+  // for PAGE_SWAP
   size_t swap_index;            // index in swap table
 
+  bool mmap;                    // is this page memory-mapped?
   bool writable;                // is page writable?
   struct hash_elem elem;        // for S-page hash table
 };

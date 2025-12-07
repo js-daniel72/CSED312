@@ -123,9 +123,10 @@ struct thread
 #endif
 
 #ifdef VM
-   /* Owned by vm/spt.c. */
-   struct hash s_page_table;           /* Supplemental page table */
-   void *esp;                          /* Saved stack pointer for stack growth */
+    /* Owned by vm/spt.c. */
+    struct hash s_page_table;           /* Supplemental page table */
+    void *esp;                          /* Saved stack pointer for stack growth */
+    struct list mmap_list;              /* List of memory-mapped files */
 #endif
 
     /* Owned by thread.c. */

@@ -52,6 +52,7 @@ spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upag
   new_entry->zero_bytes = zero_bytes;
   new_entry->writable = writable;
   new_entry->frame = NULL;
+  new_entry->mmap = false;
   new_entry->swap_index = 0;
 
   // Check for existing entry keyed by uaddr
