@@ -1,6 +1,9 @@
 #include "userprog/fd.h"
 #include "threads/thread.h"
 #include <list.h>
+#include "filesys/file.h"
+#include "threads/malloc.h"
+#include <stdlib.h>
 
 struct file_handle *
 lookup_handle_by_fd (int fd)

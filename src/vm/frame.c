@@ -2,8 +2,11 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-
+#include <stdio.h>
 #include "vm/frame.h"
+#include "vm/swap.h"
+#include "vm/spt.h"
+#include "userprog/pagedir.h"
 
 // From now on, EVERY allocation of memory must go through frame_alloc(),
 // and EVERY deallocation of memory must go through frame_dealloc().

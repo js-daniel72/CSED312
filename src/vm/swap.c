@@ -1,8 +1,10 @@
-#include "threads/malloc.h"
-#include "threads/palloc.h"
+#include "vm/swap.h"
+#include <bitmap.h>
+#include "devices/block.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
 #include "threads/thread.h"
-
+#include "vm/frame.h"
 #include "vm/swap.h"
 #include "devices/block.h"
 
