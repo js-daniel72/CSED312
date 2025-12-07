@@ -173,7 +173,7 @@ page_fault (struct intr_frame *f)
 
     // Rights violation: no lazy load possible.
     if (!not_present) {
-      kill (f);
+      process_cleanup (-1);
       return;
     }
 
@@ -182,7 +182,7 @@ page_fault (struct intr_frame *f)
     struct spt_entry *spte = spt_lookup (&t->s_page_table, upage);
     
     if (spte == NULL) {
-      kill (f);
+      process_cleanup (-1);
       return;
     }
 
@@ -191,7 +191,7 @@ page_fault (struct intr_frame *f)
     switch (spte->status) {
       // Already mapped but got not-present, so treat as error.
       case PAGE_MEMORY:
-        kill (f);
+        process_cleanup (-1);
         return;
 
       case PAGE_LAZY:
@@ -209,7 +209,7 @@ page_fault (struct intr_frame *f)
     }
 
     if (frame == NULL) {
-      kill (f);
+      process_cleanup (-1);
       return;
     }
 

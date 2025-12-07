@@ -21,7 +21,7 @@
 
 static void syscall_handler (struct intr_frame *);
 void get_user (uint32_t *dst, uint32_t *usrc);
-void validate_ptr (void* ptr);      /* IMPORTANT! This function may do exit(-1) */
+void validate_ptr (void* ptr, int length);      /* IMPORTANT! This function may do exit(-1) */
 
 void sys_exit (int status);
 tid_t sys_exec (const char *cmd_line);
@@ -46,7 +46,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  validate_ptr(f->esp);
+  validate_ptr(f->esp, 4);
 
   uint32_t arg1, arg2, arg3;
   uint32_t syscall_number = *((uint32_t *) f->esp);
@@ -137,7 +137,7 @@ sys_exit (int status)
 tid_t
 sys_exec (const char *cmd_line)
 {
-  validate_ptr(cmd_line);
+  validate_ptr(cmd_line, 4);
 
   // Create new child process
   tid_t child_tid = process_execute(cmd_line);
@@ -170,8 +170,7 @@ sys_write (int fd, const void *buffer, unsigned size)
   /* fd must be nonnegative */
   if(fd < 0)  return -1;
 
-  /* Not sure about this check.. */
-  validate_ptr(buffer);
+  validate_ptr(buffer, size);
 
   /* stdout case */
   if(fd == 1){
@@ -195,8 +194,9 @@ sys_write (int fd, const void *buffer, unsigned size)
 bool
 sys_create (const char* file, unsigned initial_size)
 {
-  validate_ptr(file);
-  
+  validate_ptr(file, 4);
+  if (file == NULL) sys_exit(-1);
+
   filesys_lock_acquire (__func__);
   bool success = filesys_create(file, initial_size);
   filesys_lock_release (__func__);
@@ -212,7 +212,8 @@ sys_open (const char *file)
   struct file *f;
   int fd;
 
-  validate_ptr(file);
+  validate_ptr(file, 4);
+  if (file == NULL) sys_exit(-1);
   
   filesys_lock_acquire (__func__);
   f = filesys_open (file);
@@ -265,8 +266,7 @@ sys_close (int fd)
 int
 sys_read (int fd, void *buffer, unsigned size)
 {
-  /* This needn't be word aligned probably */
-  validate_ptr(buffer);
+  validate_ptr(buffer, size);
 
   /* STDIN case */
   if (fd == 0)
@@ -339,7 +339,7 @@ sys_tell (int fd)
 bool
 sys_remove (const char *file)
 {
-  validate_ptr (file);
+  validate_ptr (file, 4);
   bool success = false;
 
   filesys_lock_acquire (__func__);
@@ -350,18 +350,27 @@ sys_remove (const char *file)
 }
 
 
-
+void touch_ptr (uint8_t *uaddr);
 
 
 /* EXITS when ptr is invalid, and continues if valid */
 void
-validate_ptr (void* ptr)
+validate_ptr (void* ptr, int length)
 {
   // For VM project, force a page fault for invalid accesses that are in user space
   #ifdef VM
-  uint8_t* ptr_end = (uint8_t*) ptr + 3;
+  struct thread *cur = thread_current ();
+
+  // Validations 1: ptr in user space
+  uint8_t *ptr_end = (uint8_t *) ptr + length - 1;
   if (!is_user_vaddr (ptr) || !is_user_vaddr (ptr_end))
-    sys_exit(-1);
+    sys_exit (-1);
+
+  // Validations 2: touch each page that ptr spans
+  // THIS IS TO CAUSE PAGE FAULT OUTSIDE OF SYSCALLS!!! Prevents nested filesys locks
+  // Must touch in a page granularity manner
+  for (uint8_t *page = pg_round_down(ptr); page <= pg_round_down(ptr_end); page += PGSIZE)
+    touch_ptr(page);
 
   #else
   struct thread *cur = thread_current ();
@@ -370,17 +379,27 @@ validate_ptr (void* ptr)
   if (!is_user_vaddr (ptr) || pagedir_get_page(cur->pagedir, ptr) == NULL)
     sys_exit(-1);
 
-  // Validations 2: ptr+3 still in user space and in allocated page
-  uint8_t* ptr_end = (uint8_t*) ptr + 3;
+  // Validations 2: ptr+length-1 still in user space and in allocated page
+  uint8_t* ptr_end = (uint8_t*) ptr + length - 1;
   if (!is_user_vaddr (ptr_end) || pagedir_get_page(cur->pagedir, ptr_end) == NULL)
     sys_exit(-1);
   #endif
 }
 
+#ifdef VM
+void
+touch_ptr (uint8_t *uaddr)
+{
+  int result;
+  asm volatile ("movl $1f, %0; movzbl %1, %0; 1:"
+       : "=&a" (result) : "m" (*uaddr));
+}
+#endif
+
 /* Helper function to read arguments from stack */
 void
 get_user (uint32_t *dst, uint32_t *usrc)
 {
-  validate_ptr (usrc);  
+  validate_ptr (usrc, 4);
   *dst = *usrc;
 }
