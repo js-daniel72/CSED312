@@ -169,21 +169,46 @@ page_fault (struct intr_frame *f)
   #ifdef VM
   // Handle page fault handling with virtual memory
   {
+    struct thread *t = thread_current ();
     void *upage = pg_round_down (fault_addr);
 
     // Rights violation: no lazy load possible.
-    if (!not_present) {
+    if (!not_present)
       process_cleanup (-1);
-      return;
-    }
 
+    void *esp = user ? f->esp : t->esp;
     // Lookup the supplemental page table entry for the faulting address.
-    struct thread *t = thread_current ();
     struct spt_entry *spte = spt_lookup (&t->s_page_table, upage);
     
+    // If no spte, there may be stack growth. Handle this case here
     if (spte == NULL) {
-      process_cleanup (-1);
+      if ((PHYS_BASE - MAX_STACK_SIZE) <= fault_addr && 
+           fault_addr < PHYS_BASE &&
+           esp - 32 <= fault_addr)
+      {
+        // Make frame
+        struct frame *frame = frame_alloc (upage, PAL_USER);
+        if (frame == NULL) {
+          process_cleanup (-1);
+        }
+        memset (frame->kaddr, 0, PGSIZE);
+        
+        
+        // Link frame and vm address
+        if (!install_page (upage, frame->kaddr, true))
+        {
+          frame_free (frame);
+          return;
+        }
+        // Make spt entry and activate
+        spte = spt_add_lazy_page (&t->s_page_table, NULL, 0, upage, 0, PGSIZE, true);
+        spt_activate (spte, frame);
       return;
+      }
+      else
+      {
+        process_cleanup (-1);
+      }
     }
 
     struct frame *frame = NULL;
@@ -192,14 +217,16 @@ page_fault (struct intr_frame *f)
       // Already mapped but got not-present, so treat as error.
       case PAGE_MEMORY:
         process_cleanup (-1);
-        return;
 
+      // Lazy load using load_page ().
       case PAGE_LAZY:
-      case PAGE_STACK:
-        // Lazy load or stack page.
         frame = load_page (spte);
+        if (frame == NULL) {
+          process_cleanup (-1);
+        }
+        spt_activate (spte, frame);
         break;
-
+      
       case PAGE_SWAP:
         // TODO: swap-in implementation (not provided here).
         // Fall through to fatal for now.
@@ -207,14 +234,6 @@ page_fault (struct intr_frame *f)
         frame = NULL;
         break;
     }
-
-    if (frame == NULL) {
-      process_cleanup (-1);
-      return;
-    }
-
-    // Mark page as active in SPT.
-    spt_activate (spte, frame);
     return;
   }
    #else 

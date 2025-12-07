@@ -47,6 +47,7 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   validate_ptr(f->esp, 4);
+  thread_current ()->esp = f->esp;
 
   uint32_t arg1, arg2, arg3;
   uint32_t syscall_number = *((uint32_t *) f->esp);

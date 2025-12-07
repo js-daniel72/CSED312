@@ -604,6 +604,7 @@ setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
+  struct thread *t = thread_current ();
 
   #ifdef VM
     struct frame* frame = frame_alloc (((uint8_t *) PHYS_BASE) - PGSIZE, PAL_USER | PAL_ZERO);
@@ -628,6 +629,15 @@ setup_stack (void **esp)
         #endif
       }
     }
+  
+  #ifdef VM
+  if (success)
+  {
+    // add the loaded stack page to spt
+    struct spt_entry *stack_init = spt_add_lazy_page (&t->s_page_table, NULL, 0, (uint8_t *)PHYS_BASE - PGSIZE, 0, PGSIZE, true);
+    spt_activate (stack_init, frame);
+  }
+  #endif
   return success;
 }
 

@@ -125,6 +125,7 @@ struct thread
 #ifdef VM
    /* Owned by vm/spt.c. */
    struct hash s_page_table;           /* Supplemental page table */
+   void *esp;                          /* Saved stack pointer for stack growth */
 #endif
 
     /* Owned by thread.c. */

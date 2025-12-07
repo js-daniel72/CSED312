@@ -12,7 +12,6 @@ enum page_status
   PAGE_MEMORY,    // in physical memory
   PAGE_LAZY,      // data to be loaded from file
   PAGE_SWAP,      // data in swap disk
-  PAGE_STACK      // One page above current stack pointer (used for stack growth)
 };
 
 struct spt_entry
@@ -23,7 +22,7 @@ struct spt_entry
   // for data in physical memory
   struct frame *frame;          // frame the page is loaded into
 
-  // for PAGE_LAZY and PAGE_STACK
+  // for PAGE_LAZY
   struct file *file;            // file mapped to (if any)
   off_t offset;                 // offset in file
   size_t read_bytes;            // bytes to read from file
