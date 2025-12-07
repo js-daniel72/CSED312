@@ -120,3 +120,18 @@ filesys_lock_release (const char *function)
   // printf("Releasing filesys lock from %s (thread: %s)\n", function, thread_current ()->name);
   lock_release (&file_lock);
 }
+
+bool
+filesys_lock_held_by_current_thread (void)
+{
+  return lock_held_by_current_thread (&file_lock);
+}
+
+void
+filesys_lock_reacquire (bool was_held, const char *function)
+{
+  if (was_held)
+    {
+      filesys_lock_acquire (function);
+    }
+}

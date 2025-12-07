@@ -21,4 +21,7 @@ bool filesys_remove (const char *name);
 void filesys_lock_acquire (const char *function);
 void filesys_lock_release (const char *function);
 
+bool filesys_lock_held_by_current_thread (void);
+void filesys_lock_reacquire (bool was_held, const char *function);
+
 #endif /* filesys/filesys.h */

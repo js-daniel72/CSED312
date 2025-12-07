@@ -169,6 +169,11 @@ page_fault (struct intr_frame *f)
   #ifdef VM
   // Handle page fault handling with virtual memory
   {
+    bool lock_was_held = filesys_lock_held_by_current_thread ();
+    if (lock_was_held)
+    {
+      filesys_lock_release (__func__);
+    }
     struct thread *t = thread_current ();
     void *upage = pg_round_down (fault_addr);
 
@@ -198,11 +203,15 @@ page_fault (struct intr_frame *f)
         if (!install_page (upage, frame->kaddr, true))
         {
           frame_free (frame);
-          return;
+          process_cleanup (-1);
         }
         // Make spt entry and activate
         spte = spt_add_lazy_page (&t->s_page_table, NULL, 0, upage, 0, PGSIZE, true);
         spt_activate (spte, frame);
+        if (lock_was_held)
+        {
+          filesys_lock_acquire (__func__);
+        }
       return;
       }
       else
@@ -225,6 +234,10 @@ page_fault (struct intr_frame *f)
           process_cleanup (-1);
         }
         spt_activate (spte, frame);
+        if (lock_was_held)
+        {
+          filesys_lock_acquire (__func__);
+        }
         break;
       
       case PAGE_SWAP:
