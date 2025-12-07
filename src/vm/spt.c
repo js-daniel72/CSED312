@@ -85,6 +85,8 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
   if (entry->status == PAGE_MEMORY && entry->frame != NULL)
   {
     entry->frame->pinned = true; // prevent eviction during cleanup
+    pagedir_clear_page (entry->frame->owner->pagedir, entry->uaddr);
+    palloc_free_page (entry->frame->kaddr);
     frame_free (entry->frame);
   }
   // TODO: handle PAGE_MMAP writeback if dirty, PAGE_SWAP release swap slot, etc.
