@@ -35,6 +35,7 @@ frame_alloc (void *uaddr, enum palloc_flags flags)
     {
       // This means that memory is full.
       // TODO: Evict a frame here
+      free (new_frame);
       PANIC ("Evict not implemented yet");
     }
   
