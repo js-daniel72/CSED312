@@ -636,6 +636,7 @@ setup_stack (void **esp)
     // add the loaded stack page to spt
     struct spt_entry *stack_init = spt_add_lazy_page (&t->s_page_table, NULL, 0, (uint8_t *)PHYS_BASE - PGSIZE, 0, PGSIZE, true);
     spt_activate (stack_init, frame);
+    frame->pinned = false;
   }
   #endif
   return success;

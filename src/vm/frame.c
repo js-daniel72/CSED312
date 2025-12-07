@@ -66,7 +66,7 @@ frame_alloc (void *uaddr, enum palloc_flags flags)
     }
   new_frame->uaddr = uaddr;
   new_frame->owner = thread_current ();
-  new_frame->pinned = false;
+  new_frame->pinned = true;
 
 
 
@@ -140,6 +140,10 @@ evict_frame (void)
           // 1. Pick a frame to evict (done)
           else
             {
+              // Pin the frame to prevent other threads from evicting it
+              // while we are doing I/O.
+              f->pinned = true;
+
               // 2. Swap out contents into swap table
               size_t swap_index = swap_out (f->kaddr);
               

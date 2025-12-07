@@ -208,6 +208,7 @@ page_fault (struct intr_frame *f)
         // Make spt entry and activate
         spte = spt_add_lazy_page (&t->s_page_table, NULL, 0, upage, 0, PGSIZE, true);
         spt_activate (spte, frame);
+        frame->pinned = false;
         if (lock_was_held)
         {
           filesys_lock_acquire (__func__);
@@ -252,6 +253,7 @@ page_fault (struct intr_frame *f)
       default:
         process_cleanup (-1);
     }
+    frame->pinned = false;
     spt_activate (spte, frame);
     if (lock_was_held)
     {
