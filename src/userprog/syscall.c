@@ -43,8 +43,11 @@ unsigned sys_tell (int fd);
 int sys_write (int fd, const void *buffer, unsigned size);
 int sys_read (int fd, void *buffer, unsigned size);
 void sys_seek (int fd, unsigned position);
+
+#ifdef VM
 mapid_t sys_mmap (int fd, void *addr);
 void sys_munmap (mapid_t mapping);
+#endif
 
 void
 syscall_init (void) 
@@ -56,7 +59,10 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   validate_ptr(f->esp, 4);
+  
+  #ifdef VM
   thread_current ()->esp = f->esp;
+  #endif
 
   uint32_t arg1, arg2, arg3;
   uint32_t syscall_number = *((uint32_t *) f->esp);
@@ -125,6 +131,7 @@ syscall_handler (struct intr_frame *f)
       sys_close ((int)arg1);
       break;
 
+#ifdef VM
     case SYS_MMAP:
       get_user (&arg1, (uint32_t *) f->esp + 1 );
       get_user (&arg2, (uint32_t *) f->esp + 2 );
@@ -134,7 +141,8 @@ syscall_handler (struct intr_frame *f)
       get_user (&arg1, (uint32_t *) f->esp + 1 );
       sys_munmap ((mapid_t)arg1);
       break;
-    /* invalid syscall number */
+#endif
+      /* invalid syscall number */
     default:
       sys_exit(-1);
       break;
@@ -369,6 +377,7 @@ sys_remove (const char *file)
   return success;
 }
 
+#ifdef VM
 mapid_t
 sys_mmap (int fd, void *addr)
 {
@@ -453,7 +462,7 @@ sys_munmap (mapid_t mapping)
 
   mmap_unmap_and_flush (t, mmap);
 }
-
+#endif
 
 
 
