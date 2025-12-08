@@ -10,6 +10,10 @@
 #include "vm/spt.h"
 #include "vm/swap.h"
 #include "filesys/file.h"
+
+static struct frame* load_page (struct spt_entry *spte);
+
+
 void
 spt_init (void)
 {
@@ -173,9 +177,9 @@ spt_memory_to_swap (struct spt_entry *entry)
   entry->status = PAGE_SWAP;
 }
 
-/*
+
 bool
-spt_swap_to_memory (struct spt_entry *entry, struct frame *frame)
+spt_swap_to_memory (struct spt_entry *entry)
 {
   struct frame *frame = frame_alloc (entry->uaddr, PAL_USER);
   if (frame == NULL)
@@ -188,20 +192,27 @@ spt_swap_to_memory (struct spt_entry *entry, struct frame *frame)
     return false;
   }
 
-  return true;
-}
-*/
-/*
-void spt_lazy_to_memory (struct spt_entry *entry, struct frame *frame);
-*/
-
-// Must go hand in hand with install_page ()
-void
-spt_activate (struct spt_entry *entry, struct frame *frame)
-{
+  frame->pinned = false;
   entry->status = PAGE_MEMORY;
   entry->frame = frame;
+
+  return true;
 }
+
+bool
+spt_lazy_to_memory (struct spt_entry *entry)
+{
+  struct frame *frame = load_page (entry);
+  if (frame == NULL) {
+    return false;
+  }
+  frame->pinned = false;
+  entry->status = PAGE_MEMORY;
+  entry->frame = frame;
+
+  return true;
+}
+
 
 void
 spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
@@ -245,4 +256,45 @@ spt_print_all (struct hash *spt)
     struct spt_entry *entry = hash_entry (hash_cur (&i), struct spt_entry, elem);
     printf("  UADDR: %p, STATUS: %d, FRAME: %p\n", entry->uaddr, entry->status, entry->frame);
   }
+}
+
+
+// This fully initializes frame table entry
+static struct frame*
+load_page (struct spt_entry *spte)
+{
+  ASSERT (spte != NULL);
+  ASSERT ((spte->read_bytes + spte->zero_bytes) % PGSIZE == 0);
+  ASSERT (pg_ofs (spte->uaddr) == 0);
+  ASSERT (spte->offset % PGSIZE == 0);
+  
+  file_seek (spte->file, spte->offset);
+
+  /* Get a page of memory. */
+  struct frame* frame = frame_alloc (spte->uaddr, PAL_USER);
+  if (frame == NULL)
+    return NULL;
+
+  uint8_t *kpage = frame->kaddr;
+
+  /* Load this page. */
+  filesys_lock_acquire (__func__);
+  int nread = file_read (spte->file, kpage, spte->read_bytes);
+  filesys_lock_release (__func__);
+
+  if (nread != (int) spte->read_bytes)
+    {
+      frame_free (frame);
+      return NULL;
+    }
+  memset (kpage + spte->read_bytes, 0, spte->zero_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!pagedir_install_page (thread_current ()->pagedir, spte->uaddr, kpage, spte->writable))
+    {
+      frame_free (frame);
+      return NULL;
+    }
+
+  return frame;
 }

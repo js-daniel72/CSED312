@@ -45,13 +45,11 @@ struct spt_entry* spt_add_lazy_page (struct hash *spt, struct file *file, off_t 
 struct spt_entry* spt_add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable);
 bool spt_map_file_to_lazy (struct hash *spt, struct file *file, off_t start_ofs, uint8_t *start_uaddr, size_t total_read_bytes, size_t total_zero_bytes, bool writable, bool mark_mmap);
 
-
+/* Helper functions to change states of pages. The programmer need only take care of the high-level logic, using these functions */
 void spt_memory_to_swap (struct spt_entry *entry);
 void spt_memory_to_lazy (struct spt_entry *entry);
-bool spt_swap_to_memory (struct spt_entry *entry, struct frame *frame);
-bool spt_lazy_to_memory (struct spt_entry *entry, struct frame *frame);
-
-void spt_activate (struct spt_entry *entry, struct frame *frame);
+bool spt_swap_to_memory (struct spt_entry *entry);
+bool spt_lazy_to_memory (struct spt_entry *entry);
 
 struct spt_entry* spt_lookup (struct hash *spt, void *uaddr);
 void spt_print_all (struct hash *spt);

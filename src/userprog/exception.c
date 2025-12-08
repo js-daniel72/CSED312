@@ -226,8 +226,8 @@ page_fault (struct intr_frame *f)
       process_cleanup (-1);
   }
 
-  struct frame *frame = NULL;
 
+  struct frame *frame = NULL;
   switch (spte->status)
   {
     // Already mapped but got not-present, so treat as error.
@@ -236,34 +236,22 @@ page_fault (struct intr_frame *f)
 
     // Lazy load using load_page ().
     case PAGE_LAZY:
-      frame = load_page (spte);
-      if (frame == NULL) {
+      if (!spt_lazy_to_memory (spte))
         process_cleanup (-1);
-      }
       break;
 
     case PAGE_SWAP:
-      // Allocate frame. If my code is right, this should never fail since we are evicting if necessary inside frame_alloc ()
-      frame = frame_alloc (spte->uaddr, PAL_USER);
-      if (frame == NULL)        // This should never happen in theory
+      if (!spt_swap_to_memory (spte))
         process_cleanup (-1);
-
-      swap_in (spte->swap_index, frame->kaddr); // This shouldn't have eviction issues since we just allocated a frame
-      if (!pagedir_install_page (t->pagedir, spte->uaddr, frame->kaddr, spte->writable))
-      {
-        frame_free (frame);
-        process_cleanup (-1);
-      }
       break;
+
     default:
       process_cleanup (-1);
   }
-  frame->pinned = false;
-  spt_activate (spte, frame);
+
+  // If successful, reaches here
   if (lock_was_held)
-  {
     filesys_lock_acquire (__func__);
-  }
   return;
 
 
@@ -282,47 +270,4 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
   #endif
-}
-
-
-
-
-// This fully initializes frame table entry
-static struct frame*
-load_page (struct spt_entry *spte)
-{
-  ASSERT (spte != NULL);
-  ASSERT ((spte->read_bytes + spte->zero_bytes) % PGSIZE == 0);
-  ASSERT (pg_ofs (spte->uaddr) == 0);
-  ASSERT (spte->offset % PGSIZE == 0);
-  
-  file_seek (spte->file, spte->offset);
-
-  /* Get a page of memory. */
-  struct frame* frame = frame_alloc (spte->uaddr, PAL_USER);
-  if (frame == NULL)
-    return NULL;
-
-  uint8_t *kpage = frame->kaddr;
-
-  /* Load this page. */
-  filesys_lock_acquire (__func__);
-  int nread = file_read (spte->file, kpage, spte->read_bytes);
-  filesys_lock_release (__func__);
-
-  if (nread != (int) spte->read_bytes)
-    {
-      frame_free (frame);
-      return NULL;
-    }
-  memset (kpage + spte->read_bytes, 0, spte->zero_bytes);
-
-  /* Add the page to the process's address space. */
-  if (!pagedir_install_page (thread_current ()->pagedir, spte->uaddr, kpage, spte->writable))
-    {
-      frame_free (frame);
-      return NULL;
-    }
-
-  return frame;
 }
