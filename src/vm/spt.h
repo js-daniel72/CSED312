@@ -42,6 +42,11 @@ bool spt_less (const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 // We will always add pages as lazy, then modify status using other helper functions
 struct spt_entry* spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable);
+bool spt_map_lazy_range (struct hash *spt, struct file *file,
+                         off_t start_ofs, uint8_t *start_upage,
+                         size_t total_read_bytes, size_t total_zero_bytes,
+                         bool writable, bool mark_mmap);
+
 void spt_activate (struct spt_entry *entry, struct frame *frame);
 
 struct spt_entry* spt_lookup (struct hash *spt, void *uaddr);

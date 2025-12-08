@@ -68,6 +68,41 @@ spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upag
   return new_entry;
 }
 
+// Map a contiguous range of pages lazily.
+// Splits total_read_bytes/zero_bytes per page, creates spt entries,
+// and optionally marks them as mmap-backed.
+bool
+spt_map_lazy_range (struct hash *spt, struct file *file,
+                    off_t start_ofs, uint8_t *start_upage,
+                    size_t total_read_bytes, size_t total_zero_bytes,
+                    bool writable, bool mark_mmap)
+{
+  off_t ofs = start_ofs;
+  uint8_t *upage = start_upage;
+  size_t read_bytes = total_read_bytes;
+  size_t zero_bytes = total_zero_bytes;
+
+  while (read_bytes > 0 || zero_bytes > 0)
+  {
+    uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    struct spt_entry *spte =
+      spt_add_lazy_page (spt, file, ofs, upage, page_read_bytes, page_zero_bytes, writable);
+    if (spte == NULL)
+      return false;
+
+    if (mark_mmap)
+      spte->mmap = true;
+
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    ofs += PGSIZE;
+    upage += PGSIZE;
+  }
+  return true;
+}
+
 // Must go hand in hand with install_page ()
 void
 spt_activate (struct spt_entry *entry, struct frame *frame)

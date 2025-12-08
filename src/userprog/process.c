@@ -433,21 +433,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
                 off_t ofs = file_page;
                 uint8_t *upage = (uint8_t *) mem_page;
 
-                while (read_bytes > 0 || zero_bytes > 0)
-                {
-                  uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-                  uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-                  if (spt_add_lazy_page (&t->s_page_table, file, ofs, upage,
-                                         page_read_bytes, page_zero_bytes, writable) == NULL)
-                    goto done;
-
-                  // Advance to next page
-                  read_bytes -= page_read_bytes;
-                  zero_bytes -= page_zero_bytes;
-                  ofs += PGSIZE;
-                  upage += PGSIZE;
-                }
+                if (!spt_map_lazy_range (&t->s_page_table, file, ofs, upage, read_bytes, zero_bytes, writable, false))
+                  goto done;
+                
               #else
                 if (!load_segment (file, file_page, (void *) mem_page,
                                    read_bytes, zero_bytes, writable))

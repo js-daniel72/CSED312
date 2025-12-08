@@ -383,71 +383,65 @@ sys_mmap (int fd, void *addr)
 {
   struct thread *t = thread_current ();
 
+
+  /* Start of various checks */
+
   // 1. Check for invalid fd, null address, or non-page-aligned address.
   if (fd < 2 || addr == NULL || pg_ofs(addr) != 0)
     return -1;
 
-  // 2. Get file from fd and reopen it to create an independent reference.
-  // (Closing or deleting original fd's file shouldn't affect this mmap.)
+  // 2. Get file from fd (must exist).
   struct file *file = fd_to_file (fd);
   if (file == NULL)
     return -1;
 
-  struct file *reopened_file = file_reopen(file);
+  // 3. Check file length (using original file).
+  filesys_lock_acquire (__func__);
+  off_t length = file_length (file);
+  filesys_lock_release (__func__);
+  if (length == 0)
+    return -1;
+
+  // 4. Check for overlap with existing pages in SPT over the entire range.
+  for (off_t offset = 0; offset < length; offset += PGSIZE)
+  {
+    if (spt_lookup (&t->s_page_table, addr + offset) != NULL)
+      return -1;
+  }
+
+  /* End of various checks */
+
+
+  // Reopen the file and use its pointer (to be independent of original file's close etc)
+  struct file *reopened_file = file_reopen (file);
   if (reopened_file == NULL)
     return -1;
 
-  // 3. Check file length.
-  off_t length = file_length(reopened_file);
-  if (length == 0)
-  {
-    file_close(reopened_file);
-    return -1;
-  }
-
-  // 4. Check for overlap with existing pages.
-  for (off_t offset = 0; offset < length; offset += PGSIZE)
-  {
-    if (spt_lookup(&t->s_page_table, addr + offset) != NULL)
-    {
-      file_close(reopened_file);
-      return -1;
-    }
-  }
 
   // Create a new mmap_file struct
-  struct mmap_file *mmap = malloc(sizeof(struct mmap_file));
+  struct mmap_file *mmap = malloc (sizeof *mmap);
   if (mmap == NULL)
   {
-    file_close(reopened_file);
+    file_close (reopened_file);
     return -1;
   }
   mmap->mapping = mmap_get_next_id ();
   mmap->file = reopened_file;
   mmap->addr = addr;
-  list_push_back(&thread_current()->mmap_list, &mmap->elem);
+  list_push_back (&t->mmap_list, &mmap->elem);
+
 
   // Lazy-load the pages
   off_t ofs = 0;
   uint8_t *upage = (uint8_t *) addr;
   size_t read_bytes = length;
   size_t zero_bytes = (PGSIZE - (length % PGSIZE)) % PGSIZE;
-
-  while (read_bytes > 0 || zero_bytes > 0)
+  if (!spt_map_lazy_range (&t->s_page_table, reopened_file, ofs, upage, read_bytes, zero_bytes, true, true))
   {
-    uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-    uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-    struct spt_entry *spte = spt_add_lazy_page (&t->s_page_table, reopened_file, ofs, upage, page_read_bytes, page_zero_bytes, true);
-    if (spte == NULL)
-      return -1;
-    spte->mmap = true;
-
-    // Advance to next page
-    read_bytes -= page_read_bytes;
-    zero_bytes -= page_zero_bytes;
-    ofs += PGSIZE;
-    upage += PGSIZE;
+    list_remove (&mmap->elem);
+    file_close (reopened_file);
+    free (mmap);
+    return -1;
   }
 
   return mmap->mapping;
