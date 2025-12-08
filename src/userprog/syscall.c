@@ -479,6 +479,7 @@ validate_ptr (void* ptr, int length)
   // Validations 2: touch each page that ptr spans
   // THIS IS TO CAUSE PAGE FAULT OUTSIDE OF SYSCALLS!!! Prevents nested filesys locks
   // Must touch in a page granularity manner
+  // Turns out this is not needed, but being safe is good
   for (uint8_t *page = pg_round_down(ptr); page <= pg_round_down(ptr_end); page += PGSIZE)
     touch_ptr(page);
 

@@ -125,7 +125,6 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
     palloc_free_page (entry->frame->kaddr);
     frame_free (entry->frame);
   }
-  // TODO: handle PAGE_MMAP writeback if dirty, PAGE_SWAP release swap slot, etc.
   if (entry->status == PAGE_SWAP)
   {
     swap_free (entry->swap_index);
