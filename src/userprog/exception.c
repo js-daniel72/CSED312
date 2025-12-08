@@ -21,10 +21,12 @@
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
+static struct frame* load_page (struct spt_entry *spte);
+
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+static void page_fault_handler (struct intr_frame *f, void *fault_addr, bool not_present, bool write, bool user);
 
-static struct frame* load_page (struct spt_entry *spte);
 /* Registers handlers for interrupts that can be caused by user
    programs.
 
@@ -166,18 +168,29 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   #ifdef VM
+  bool lock_was_held = filesys_lock_held_by_current_thread ();
+  if (lock_was_held)
+    filesys_lock_release (__func__);
+  page_fault_handler (f, fault_addr, not_present, write, user);
+  if (lock_was_held)
+    filesys_lock_acquire (__func__);
 
-  /* Start of page fault handler */
+  #else 
+  /* To implement virtual memory, delete the rest of the function
+     body, and replace it with code that brings in the page to
+     which fault_addr refers. */
+  printf ("Page fault at %p: %s error %s page in %s context.\n",
+          fault_addr,
+          not_present ? "not present" : "rights violation",
+          write ? "writing" : "reading",
+          user ? "user" : "kernel");
+  kill (f);
+  #endif
+}
 
-
-
-
-    bool lock_was_held = filesys_lock_held_by_current_thread ();
-    if (lock_was_held)
-    {
-      filesys_lock_release (__func__);
-    }
-
+static void
+page_fault_handler (struct intr_frame *f, void *fault_addr, bool not_present, bool write, bool user)
+{
   struct thread *t = thread_current ();
   void *upage = pg_round_down (fault_addr);
 
@@ -201,21 +214,16 @@ page_fault (struct intr_frame *f)
         process_cleanup (-1);
 
       // Here, stack creation is successful
-      if (lock_was_held)
-        filesys_lock_acquire (__func__);
       return;
     }
   }
 
-
-  struct frame *frame = NULL;
   switch (spte->status)
   {
     // Already mapped but got not-present, so treat as error.
     case PAGE_MEMORY:
       process_cleanup (-1);
 
-    // Lazy load using load_page ().
     case PAGE_LAZY:
       if (!spt_lazy_to_memory (spte))
         process_cleanup (-1);
@@ -229,26 +237,5 @@ page_fault (struct intr_frame *f)
     default:
       process_cleanup (-1);
   }
-
-  // If successful, reaches here
-  if (lock_was_held)
-    filesys_lock_acquire (__func__);
   return;
-
-
-  /* End of page fault handler */
-
-
-
-   #else 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
-  #endif
 }
