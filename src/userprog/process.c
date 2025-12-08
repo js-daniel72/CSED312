@@ -593,29 +593,11 @@ static bool
 setup_stack (void **esp) 
 {
 #ifdef VM
-  struct thread *t = thread_current ();
-  struct frame *frame = frame_alloc (((uint8_t *) PHYS_BASE) - PGSIZE, PAL_USER | PAL_ZERO);
-  if (frame == NULL)
+  if (!spt_initialize_as_memory(((uint8_t *) PHYS_BASE) - PGSIZE))
     return false;
-
-  uint8_t *kpage = frame->kaddr;
-  void *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
-
-  if (!pagedir_install_page (t->pagedir, upage, kpage, true))
-  {
-    frame_free (frame);
-    return false;
-  }
-
   *esp = PHYS_BASE;
-
-  // add the loaded stack page to spt
-  struct spt_entry *spt_entry =
-      spt_add_memory_page (&t->s_page_table, upage, frame, true);
-  (void)spt_entry; // avoid unused warning if spt_add_memory_page returns unused
-  frame->pinned = false;
-
   return true;
+
 #else
   uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage == NULL)

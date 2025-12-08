@@ -190,40 +190,21 @@ page_fault (struct intr_frame *f)
   
   // If no spte, it's either stack growth, or invalid access.
   if (spte == NULL) {
-    if ((PHYS_BASE - MAX_STACK_SIZE) <= fault_addr && 
+    if (!((PHYS_BASE - MAX_STACK_SIZE) <= fault_addr && 
           fault_addr < PHYS_BASE &&
-          esp - 32 <= fault_addr)
+          esp - 32 <= fault_addr))
+      process_cleanup (-1);
+    
+    else   // Stack growth
     {
-      // Make frame
-      struct frame *frame = frame_alloc (upage, PAL_USER);
-      if (frame == NULL) {
+      if (!spt_initialize_as_memory (upage))
         process_cleanup (-1);
-      }
-      memset (frame->kaddr, 0, PGSIZE);
-      
-      
-      // Link frame and vm address
-      if (!pagedir_install_page (t->pagedir, upage, frame->kaddr, true))
-      {
-        frame_free (frame);
-        process_cleanup (-1);
-      }
 
-      // Make SPT entry
-      struct spt_entry *spt_entry = spt_add_memory_page (&t->s_page_table, upage, frame, true);
-      if (spt_entry == NULL)
-      {
-        frame_free (frame);
-        process_cleanup (-1);
-      }
-      
-      frame->pinned = false;
+      // Here, stack creation is successful
       if (lock_was_held)
         filesys_lock_acquire (__func__);
-    return;
+      return;
     }
-    else
-      process_cleanup (-1);
   }
 
 

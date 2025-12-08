@@ -12,6 +12,7 @@
 #include "filesys/file.h"
 
 static struct frame* load_page (struct spt_entry *spte);
+bool add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable);
 
 
 void
@@ -19,6 +20,8 @@ spt_init (void)
 {
   // Nothing to initialize for now
 }
+
+
 
 // Mandatory functions for hash table operations
 unsigned
@@ -107,39 +110,36 @@ spt_map_file_to_lazy (struct hash *spt, struct file *file,
   return true;
 }
 
-struct spt_entry*
-spt_add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable)
+bool
+spt_initialize_as_memory (void *upage)
 {
-  uint8_t *page_uaddr = pg_round_down (uaddr);
-  struct spt_entry *new_entry = malloc (sizeof *new_entry);
-  if (new_entry == NULL)
-    return NULL;
+  struct thread *t = thread_current ();
 
-  new_entry->uaddr = page_uaddr;
-  new_entry->status = PAGE_MEMORY;
-  new_entry->frame = frame;
-  new_entry->writable = writable;
-  
-  /* These four are unimportant, since memory-init pages are never backed by file */
-  new_entry->file = NULL;
-  new_entry->offset = 0;
-  new_entry->read_bytes = 0;
-  new_entry->zero_bytes = 0;
-  
-  new_entry->mmap = false;
-  new_entry->swap_index = -1;
+  // Get a frame
+  struct frame *frame = frame_alloc (upage, PAL_USER | PAL_ZERO);
+  if (frame == NULL)
+    return false;
+  uint8_t *kpage = frame->kaddr;
 
-  // Check for existing entry keyed by uaddr
-  struct spt_entry probe;
-  probe.uaddr = page_uaddr;
-  struct hash_elem *existing = hash_find (spt, &probe.elem);
-  if (existing != NULL) {
-    free (new_entry);
-    return NULL;
+  // Install it in page directory
+  if (!pagedir_install_page (t->pagedir, upage, kpage, true))
+  {
+    frame_free (frame);
+    return false;
   }
-  hash_insert (spt, &new_entry->elem);
-  return new_entry;
+
+  // create a new spt entry
+  if (add_memory_page (&t->s_page_table, upage, frame, true) == NULL)
+  {
+    frame_free (frame);
+    return false;
+  }
+  frame->pinned = false;
+
+  return true;
 }
+
+
 
 void
 spt_memory_to_lazy (struct spt_entry *entry)
@@ -258,6 +258,42 @@ spt_print_all (struct hash *spt)
   }
 }
 
+
+/* Helper functions */
+
+bool
+add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable)
+{
+  uint8_t *page_uaddr = pg_round_down (uaddr);
+  struct spt_entry *new_entry = malloc (sizeof *new_entry);
+  if (new_entry == NULL)
+    return NULL;
+
+  new_entry->uaddr = page_uaddr;
+  new_entry->status = PAGE_MEMORY;
+  new_entry->frame = frame;
+  new_entry->writable = writable;
+  
+  /* These four are unimportant, since memory-init pages are never backed by file */
+  new_entry->file = NULL;
+  new_entry->offset = 0;
+  new_entry->read_bytes = 0;
+  new_entry->zero_bytes = 0;
+  
+  new_entry->mmap = false;
+  new_entry->swap_index = -1;
+
+  // Check for existing entry keyed by uaddr
+  struct spt_entry probe;
+  probe.uaddr = page_uaddr;
+  struct hash_elem *existing = hash_find (spt, &probe.elem);
+  if (existing != NULL) {
+    free (new_entry);
+    return NULL;
+  }
+  hash_insert (spt, &new_entry->elem);
+  return new_entry;
+}
 
 // This fully initializes frame table entry
 static struct frame*
