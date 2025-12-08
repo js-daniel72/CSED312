@@ -116,9 +116,9 @@ spt_memory_to_lazy (struct spt_entry *entry)
   }
   
   // Cleanup of page table and frame
-  entry->frame = NULL;
   pagedir_clear_page (entry->frame->owner->pagedir, entry->uaddr);
   frame_free (entry->frame);
+  entry->frame = NULL;
 
   entry->status = PAGE_LAZY;
 }
