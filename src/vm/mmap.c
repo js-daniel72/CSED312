@@ -61,7 +61,6 @@ mmap_unmap_and_flush (struct thread *t, struct mmap_file *m)
       struct frame *f = spte->frame;
       if (f != NULL)
       {
-        palloc_free_page (f->kaddr);
         frame_free (f);
       }
     }

@@ -25,7 +25,6 @@ static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
 static struct frame* load_page (struct spt_entry *spte);
-static bool install_page (void *upage, void *kpage, bool writable);
 /* Registers handlers for interrupts that can be caused by user
    programs.
 
@@ -167,100 +166,111 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   #ifdef VM
-  // Handle page fault handling with virtual memory
-  {
+
+  /* Start of page fault handler */
+
+
+
+
     bool lock_was_held = filesys_lock_held_by_current_thread ();
     if (lock_was_held)
     {
       filesys_lock_release (__func__);
     }
-    struct thread *t = thread_current ();
-    void *upage = pg_round_down (fault_addr);
 
-    // Rights violation: no lazy load possible.
-    if (!not_present)
+  struct thread *t = thread_current ();
+  void *upage = pg_round_down (fault_addr);
+
+  // Rights violation: no lazy load possible.
+  if (!not_present)
+    process_cleanup (-1);
+
+  void *esp = user ? f->esp : t->esp;
+  struct spt_entry *spte = spt_lookup (&t->s_page_table, upage);
+  
+  // If no spte, it's either stack growth, or invalid access.
+  if (spte == NULL) {
+    if ((PHYS_BASE - MAX_STACK_SIZE) <= fault_addr && 
+          fault_addr < PHYS_BASE &&
+          esp - 32 <= fault_addr)
+    {
+      // Make frame
+      struct frame *frame = frame_alloc (upage, PAL_USER);
+      if (frame == NULL) {
+        process_cleanup (-1);
+      }
+      memset (frame->kaddr, 0, PGSIZE);
+      
+      
+      // Link frame and vm address
+      if (!pagedir_install_page (t->pagedir, upage, frame->kaddr, true))
+      {
+        frame_free (frame);
+        process_cleanup (-1);
+      }
+
+      // Make SPT entry
+      struct spt_entry *spt_entry = spt_add_memory_page (&t->s_page_table, upage, frame, true);
+      if (spt_entry == NULL)
+      {
+        frame_free (frame);
+        process_cleanup (-1);
+      }
+      
+      frame->pinned = false;
+      if (lock_was_held)
+        filesys_lock_acquire (__func__);
+    return;
+    }
+    else
+      process_cleanup (-1);
+  }
+
+  struct frame *frame = NULL;
+
+  switch (spte->status)
+  {
+    // Already mapped but got not-present, so treat as error.
+    case PAGE_MEMORY:
       process_cleanup (-1);
 
-    void *esp = user ? f->esp : t->esp;
-    // Lookup the supplemental page table entry for the faulting address.
-    struct spt_entry *spte = spt_lookup (&t->s_page_table, upage);
-    
-    // If no spte, there may be stack growth. Handle this case here
-    if (spte == NULL) {
-      if ((PHYS_BASE - MAX_STACK_SIZE) <= fault_addr && 
-           fault_addr < PHYS_BASE &&
-           esp - 32 <= fault_addr)
-      {
-        // Make frame
-        struct frame *frame = frame_alloc (upage, PAL_USER);
-        if (frame == NULL) {
-          process_cleanup (-1);
-        }
-        memset (frame->kaddr, 0, PGSIZE);
-        
-        
-        // Link frame and vm address
-        if (!install_page (upage, frame->kaddr, true))
-        {
-          frame_free (frame);
-          process_cleanup (-1);
-        }
-        // Make spt entry and activate
-        spte = spt_add_lazy_page (&t->s_page_table, NULL, 0, upage, 0, PGSIZE, true);
-        spt_activate (spte, frame);
-        frame->pinned = false;
-        if (lock_was_held)
-        {
-          filesys_lock_acquire (__func__);
-        }
-      return;
-      }
-      else
-      {
+    // Lazy load using load_page ().
+    case PAGE_LAZY:
+      frame = load_page (spte);
+      if (frame == NULL) {
         process_cleanup (-1);
       }
-    }
+      break;
 
-    struct frame *frame = NULL;
-
-    switch (spte->status)
-    {
-      // Already mapped but got not-present, so treat as error.
-      case PAGE_MEMORY:
+    case PAGE_SWAP:
+      // Allocate frame. If my code is right, this should never fail since we are evicting if necessary inside frame_alloc ()
+      frame = frame_alloc (spte->uaddr, PAL_USER);
+      if (frame == NULL)        // This should never happen in theory
         process_cleanup (-1);
 
-      // Lazy load using load_page ().
-      case PAGE_LAZY:
-        frame = load_page (spte);
-        if (frame == NULL) {
-          process_cleanup (-1);
-        }
-        break;
-
-      case PAGE_SWAP:
-        // Allocate frame. If my code is right, this should never fail since we are evicting if necessary inside frame_alloc ()
-        frame = frame_alloc (spte->uaddr, PAL_USER);
-        if (frame == NULL)        // This should never happen in theory
-          process_cleanup (-1);
-
-        swap_in (spte->swap_index, frame->kaddr); // This shouldn't have eviction issues since we just allocated a frame
-        if (!install_page (spte->uaddr, frame->kaddr, spte->writable))
-        {
-          frame_free (frame);
-          process_cleanup (-1);
-        }
-        break;
-      default:
+      swap_in (spte->swap_index, frame->kaddr); // This shouldn't have eviction issues since we just allocated a frame
+      if (!pagedir_install_page (t->pagedir, spte->uaddr, frame->kaddr, spte->writable))
+      {
+        frame_free (frame);
         process_cleanup (-1);
-    }
-    frame->pinned = false;
-    spt_activate (spte, frame);
-    if (lock_was_held)
-    {
-      filesys_lock_acquire (__func__);
-    }
-    return;
+      }
+      break;
+    default:
+      process_cleanup (-1);
   }
+  frame->pinned = false;
+  spt_activate (spte, frame);
+  if (lock_was_held)
+  {
+    filesys_lock_acquire (__func__);
+  }
+  return;
+
+
+  /* End of page fault handler */
+
+
+
    #else 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -308,31 +318,11 @@ load_page (struct spt_entry *spte)
   memset (kpage + spte->read_bytes, 0, spte->zero_bytes);
 
   /* Add the page to the process's address space. */
-  if (!install_page (spte->uaddr, kpage, spte->writable))
+  if (!pagedir_install_page (thread_current ()->pagedir, spte->uaddr, kpage, spte->writable))
     {
       frame_free (frame);
       return NULL;
     }
 
   return frame;
-}
-
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }

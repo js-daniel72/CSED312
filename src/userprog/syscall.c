@@ -432,11 +432,9 @@ sys_mmap (int fd, void *addr)
 
 
   // Lazy-load the pages
-  off_t ofs = 0;
-  uint8_t *upage = (uint8_t *) addr;
   size_t read_bytes = length;
   size_t zero_bytes = (PGSIZE - (length % PGSIZE)) % PGSIZE;
-  if (!spt_map_lazy_range (&t->s_page_table, reopened_file, ofs, upage, read_bytes, zero_bytes, true, true))
+  if (!spt_map_file_to_lazy (&t->s_page_table, reopened_file, 0, addr, read_bytes, zero_bytes, true, true))
   {
     list_remove (&mmap->elem);
     file_close (reopened_file);

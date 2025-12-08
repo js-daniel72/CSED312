@@ -34,9 +34,9 @@ spt_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED
 
 // Function to add a page to the supplemental page table
 struct spt_entry*
-spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable)
+spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *uaddr, uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
-  uint8_t *uaddr = pg_round_down (upage);
+  uint8_t *upage = pg_round_down (uaddr);
   if (read_bytes + zero_bytes != PGSIZE)
     return NULL;
   
@@ -44,7 +44,7 @@ spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upag
   if (new_entry == NULL)
     return NULL;
 
-  new_entry->uaddr = uaddr;
+  new_entry->uaddr = upage;
   new_entry->status = PAGE_LAZY;
   new_entry->file = file;
   new_entry->offset = ofs;
@@ -72,13 +72,13 @@ spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *upag
 // Splits total_read_bytes/zero_bytes per page, creates spt entries,
 // and optionally marks them as mmap-backed.
 bool
-spt_map_lazy_range (struct hash *spt, struct file *file,
-                    off_t start_ofs, uint8_t *start_upage,
+spt_map_file_to_lazy (struct hash *spt, struct file *file,
+                    off_t start_ofs, uint8_t *start_uaddr,
                     size_t total_read_bytes, size_t total_zero_bytes,
                     bool writable, bool mark_mmap)
 {
   off_t ofs = start_ofs;
-  uint8_t *upage = start_upage;
+  uint8_t *upage = start_uaddr;
   size_t read_bytes = total_read_bytes;
   size_t zero_bytes = total_zero_bytes;
 
@@ -103,6 +103,98 @@ spt_map_lazy_range (struct hash *spt, struct file *file,
   return true;
 }
 
+struct spt_entry*
+spt_add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable)
+{
+  uint8_t *page_uaddr = pg_round_down (uaddr);
+  struct spt_entry *new_entry = malloc (sizeof *new_entry);
+  if (new_entry == NULL)
+    return NULL;
+
+  new_entry->uaddr = page_uaddr;
+  new_entry->status = PAGE_MEMORY;
+  new_entry->frame = frame;
+  new_entry->writable = writable;
+  
+  /* These four are unimportant, since memory-init pages are never backed by file */
+  new_entry->file = NULL;
+  new_entry->offset = 0;
+  new_entry->read_bytes = 0;
+  new_entry->zero_bytes = 0;
+  
+  new_entry->mmap = false;
+  new_entry->swap_index = -1;
+
+  // Check for existing entry keyed by uaddr
+  struct spt_entry probe;
+  probe.uaddr = page_uaddr;
+  struct hash_elem *existing = hash_find (spt, &probe.elem);
+  if (existing != NULL) {
+    free (new_entry);
+    return NULL;
+  }
+  hash_insert (spt, &new_entry->elem);
+  return new_entry;
+}
+
+void
+spt_memory_to_lazy (struct spt_entry *entry)
+{
+  // For mmaped pages, write back if dirty
+  if (pagedir_is_dirty (entry->frame->owner->pagedir, entry->uaddr))
+  {
+    filesys_lock_acquire (__func__);
+    file_seek (entry->file, entry->offset);
+    file_write (entry->file, entry->frame->kaddr, entry->read_bytes);
+    filesys_lock_release (__func__);
+  }
+  
+  // Cleanup of page table and frame
+  entry->frame = NULL;
+  pagedir_clear_page (entry->frame->owner->pagedir, entry->uaddr);
+  frame_free (entry->frame);
+
+  entry->status = PAGE_LAZY;
+}
+
+void
+spt_memory_to_swap (struct spt_entry *entry)
+{
+  // Cleanup of swap
+  struct frame *f = entry->frame;
+  size_t swap_index = swap_out (f->kaddr);
+  entry->swap_index = swap_index;
+
+  // Cleanup of page table and frame
+  entry->frame = NULL;
+  pagedir_clear_page (f->owner->pagedir, f->uaddr);
+  frame_free (f);
+
+  entry->status = PAGE_SWAP;
+}
+
+/*
+bool
+spt_swap_to_memory (struct spt_entry *entry, struct frame *frame)
+{
+  struct frame *frame = frame_alloc (entry->uaddr, PAL_USER);
+  if (frame == NULL)
+    return false;
+
+  swap_in (entry->swap_index, frame->kaddr);
+  if (!pagedir_install_page (thread_current ()->pagedir, entry->uaddr, frame->kaddr, entry->writable))
+  {
+    frame_free (frame);
+    return false;
+  }
+
+  return true;
+}
+*/
+/*
+void spt_lazy_to_memory (struct spt_entry *entry, struct frame *frame);
+*/
+
 // Must go hand in hand with install_page ()
 void
 spt_activate (struct spt_entry *entry, struct frame *frame)
@@ -122,7 +214,6 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
   {
     entry->frame->pinned = true; // prevent eviction during cleanup
     pagedir_clear_page (entry->frame->owner->pagedir, entry->uaddr);
-    palloc_free_page (entry->frame->kaddr);
     frame_free (entry->frame);
   }
   if (entry->status == PAGE_SWAP)

@@ -85,6 +85,7 @@ frame_free (struct frame *frame)
   if (!was_held)
     lock_acquire (&frame_table_lock);
 
+  palloc_free_page (frame->kaddr);
   if (clock_hand == &frame->elem)
     {
       clock_hand = list_next (clock_hand);
@@ -134,46 +135,18 @@ evict_frame (void)
         {
           // If it was accessed recently, give it a second chance
           if (pagedir_is_accessed (f->owner->pagedir, f->uaddr))
-            {
               pagedir_set_accessed (f->owner->pagedir, f->uaddr, false);
-            }
-          // 1. Pick a frame to evict (done)
           else
             {
               struct spt_entry *spte = spt_lookup (&f->owner->s_page_table, f->uaddr);
               ASSERT (spte != NULL);
 
-              // Pin the frame to prevent other threads from evicting it
-              // while we are doing I/O.
               f->pinned = true;
 
               if (spte->mmap)
-              {
-                // For mmaped pages, write back if dirty
-                if (pagedir_is_dirty (f->owner->pagedir, f->uaddr))
-                {
-                  filesys_lock_acquire (__func__);
-                  file_seek (spte->file, spte->offset);
-                  file_write (spte->file, f->kaddr, spte->read_bytes);
-                  filesys_lock_release (__func__);
-                }
-                spte->status = PAGE_LAZY;
-
-              }
+                spt_memory_to_lazy (spte);
               else
-              {
-                // For other pages, swap out
-                size_t swap_index = swap_out (f->kaddr);
-                spte->status = PAGE_SWAP;
-                spte->swap_index = swap_index;
-              }
-              
-              // Unmap the page from the page table and free the frame.
-              spte->frame = NULL;
-              pagedir_clear_page (f->owner->pagedir, f->uaddr);
-              palloc_free_page (f->kaddr);
-              frame_free (f);
-
+                spt_memory_to_swap (spte);
               return;
             }
         }
