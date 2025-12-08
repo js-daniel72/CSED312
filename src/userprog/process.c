@@ -430,12 +430,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
                 }
               // Use lazy loading for VM project
               #ifdef VM
-                off_t ofs = file_page;
-                uint8_t *upage = (uint8_t *) mem_page;
-
-                if (!spt_map_file_to_lazy (&t->s_page_table, file, ofs, upage, read_bytes, zero_bytes, writable, false))
-                  goto done;
-                
+                if (!spt_initialize_file_as_lazy (&t->s_page_table, file, file_page, (uint8_t *) mem_page, read_bytes, zero_bytes, writable, false))
+                  goto done;                
               #else
                 if (!load_segment (file, file_page, (void *) mem_page,
                                    read_bytes, zero_bytes, writable))

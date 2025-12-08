@@ -12,8 +12,9 @@
 #include "filesys/file.h"
 
 static struct frame* load_page (struct spt_entry *spte);
-bool add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable);
 
+bool add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable);
+bool add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *uaddr, uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool mark_mmap);
 
 void
 spt_init (void)
@@ -23,7 +24,7 @@ spt_init (void)
 
 
 
-// Mandatory functions for hash table operations
+/* Mandatory functions for hash table operations */
 unsigned
 spt_hash (const struct hash_elem *e, void *aux UNUSED)
 {
@@ -39,47 +40,13 @@ spt_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED
   return sa->uaddr < sb->uaddr;
 }
 
-// Function to add a page to the supplemental page table
-struct spt_entry*
-spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *uaddr, uint32_t read_bytes, uint32_t zero_bytes, bool writable)
-{
-  uint8_t *upage = pg_round_down (uaddr);
-  if (read_bytes + zero_bytes != PGSIZE)
-    return NULL;
-  
-  struct spt_entry *new_entry = malloc (sizeof *new_entry);
-  if (new_entry == NULL)
-    return NULL;
 
-  new_entry->uaddr = upage;
-  new_entry->status = PAGE_LAZY;
-  new_entry->file = file;
-  new_entry->offset = ofs;
-  new_entry->read_bytes = read_bytes;
-  new_entry->zero_bytes = zero_bytes;
-  new_entry->writable = writable;
-  new_entry->frame = NULL;
-  new_entry->mmap = false;
-  new_entry->swap_index = 0;
-
-  // Check for existing entry keyed by uaddr
-  struct spt_entry probe;
-  probe.uaddr = uaddr;
-  struct hash_elem *existing = hash_find (spt, &probe.elem);
-  if (existing != NULL) {
-    free (new_entry);
-    return NULL;
-  }
-
-  hash_insert (spt, &new_entry->elem);
-  return new_entry;
-}
 
 // Map a contiguous range of pages lazily.
 // Splits total_read_bytes/zero_bytes per page, creates spt entries,
 // and optionally marks them as mmap-backed.
 bool
-spt_map_file_to_lazy (struct hash *spt, struct file *file,
+spt_initialize_file_as_lazy (struct hash *spt, struct file *file,
                     off_t start_ofs, uint8_t *start_uaddr,
                     size_t total_read_bytes, size_t total_zero_bytes,
                     bool writable, bool mark_mmap)
@@ -94,13 +61,8 @@ spt_map_file_to_lazy (struct hash *spt, struct file *file,
     uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    struct spt_entry *spte =
-      spt_add_lazy_page (spt, file, ofs, upage, page_read_bytes, page_zero_bytes, writable);
-    if (spte == NULL)
+    if (!add_lazy_page (spt, file, ofs, upage, page_read_bytes, page_zero_bytes, writable, mark_mmap))
       return false;
-
-    if (mark_mmap)
-      spte->mmap = true;
 
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
@@ -214,6 +176,7 @@ spt_lazy_to_memory (struct spt_entry *entry)
 }
 
 
+
 void
 spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 {
@@ -234,8 +197,6 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 
   free (entry);
 }
-
-
 
 struct spt_entry*
 spt_lookup (struct hash *spt, void *uaddr)
@@ -260,6 +221,41 @@ spt_print_all (struct hash *spt)
 
 
 /* Helper functions */
+// Function to add a page to the supplemental page table
+bool
+add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *uaddr, uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool mark_mmap)
+{
+  uint8_t *upage = pg_round_down (uaddr);
+  if (read_bytes + zero_bytes != PGSIZE)
+    return false;
+  
+  struct spt_entry *new_entry = malloc (sizeof *new_entry);
+  if (new_entry == NULL)
+    return false;
+
+  new_entry->uaddr = upage;
+  new_entry->status = PAGE_LAZY;
+  new_entry->file = file;
+  new_entry->offset = ofs;
+  new_entry->read_bytes = read_bytes;
+  new_entry->zero_bytes = zero_bytes;
+  new_entry->writable = writable;
+  new_entry->frame = NULL;
+  new_entry->mmap = mark_mmap;
+  new_entry->swap_index = 0;
+
+  // Check for existing entry keyed by uaddr
+  struct spt_entry probe;
+  probe.uaddr = uaddr;
+  struct hash_elem *existing = hash_find (spt, &probe.elem);
+  if (existing != NULL) {
+    free (new_entry);
+    return false;
+  }
+
+  hash_insert (spt, &new_entry->elem);
+  return true;
+}
 
 bool
 add_memory_page (struct hash *spt, void *uaddr, struct frame *frame, bool writable)

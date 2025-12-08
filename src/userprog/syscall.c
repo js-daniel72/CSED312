@@ -385,7 +385,6 @@ sys_mmap (int fd, void *addr)
 
 
   /* Start of various checks */
-
   // 1. Check for invalid fd, null address, or non-page-aligned address.
   if (fd < 2 || addr == NULL || pg_ofs(addr) != 0)
     return -1;
@@ -408,7 +407,6 @@ sys_mmap (int fd, void *addr)
     if (spt_lookup (&t->s_page_table, addr + offset) != NULL)
       return -1;
   }
-
   /* End of various checks */
 
 
@@ -434,7 +432,7 @@ sys_mmap (int fd, void *addr)
   // Lazy-load the pages
   size_t read_bytes = length;
   size_t zero_bytes = (PGSIZE - (length % PGSIZE)) % PGSIZE;
-  if (!spt_map_file_to_lazy (&t->s_page_table, reopened_file, 0, addr, read_bytes, zero_bytes, true, true))
+  if (!spt_initialize_file_as_lazy (&t->s_page_table, reopened_file, 0, addr, read_bytes, zero_bytes, true, true))
   {
     list_remove (&mmap->elem);
     file_close (reopened_file);

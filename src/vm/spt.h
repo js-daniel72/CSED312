@@ -41,8 +41,8 @@ unsigned spt_hash (const struct hash_elem *e, void *aux);
 bool spt_less (const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 /* Every spt entry creation is done via one of these functions */
-struct spt_entry* spt_add_lazy_page (struct hash *spt, struct file *file, off_t ofs, uint8_t *uaddr, uint32_t read_bytes, uint32_t zero_bytes, bool writable);
-bool spt_map_file_to_lazy (struct hash *spt, struct file *file, off_t start_ofs, uint8_t *start_uaddr, size_t total_read_bytes, size_t total_zero_bytes, bool writable, bool mark_mmap);
+bool spt_initialize_as_memory (void *upage);
+bool spt_initialize_file_as_lazy (struct hash *spt, struct file *file, off_t start_ofs, uint8_t *start_uaddr, size_t total_read_bytes, size_t total_zero_bytes, bool writable, bool mark_mmap);
 
 /* Helper functions to change states of pages. The programmer need only take care of the high-level logic, using these functions */
 void spt_memory_to_swap (struct spt_entry *entry);
@@ -50,8 +50,6 @@ void spt_memory_to_lazy (struct spt_entry *entry);
 bool spt_swap_to_memory (struct spt_entry *entry);
 bool spt_lazy_to_memory (struct spt_entry *entry);
 
-bool spt_initialize_as_memory (void *upage);
-// bool spt_initialize_as_lazy ();
 
 struct spt_entry* spt_lookup (struct hash *spt, void *uaddr);
 void spt_print_all (struct hash *spt);
