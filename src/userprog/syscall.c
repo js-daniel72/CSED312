@@ -5,16 +5,23 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
+#include <debug.h>
 
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "userprog/fd.h"
 
+#include "vm/mmap.h"
+#include "vm/spt.h"
+#include "vm/frame.h"
+
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
 #include "lib/kernel/console.h"
+#include "lib/kernel/hash.h"
 
 #include "devices/shutdown.h"
 #include "devices/input.h"
@@ -36,6 +43,8 @@ unsigned sys_tell (int fd);
 int sys_write (int fd, const void *buffer, unsigned size);
 int sys_read (int fd, void *buffer, unsigned size);
 void sys_seek (int fd, unsigned position);
+mapid_t sys_mmap (int fd, void *addr);
+void sys_munmap (mapid_t mapping);
 
 void
 syscall_init (void) 
@@ -52,6 +61,7 @@ syscall_handler (struct intr_frame *f)
   uint32_t arg1, arg2, arg3;
   uint32_t syscall_number = *((uint32_t *) f->esp);
   
+  // printf ("Syscall: %d\n", syscall_number);
   switch (syscall_number) {
     case SYS_HALT:
       shutdown_power_off();
@@ -115,6 +125,15 @@ syscall_handler (struct intr_frame *f)
       sys_close ((int)arg1);
       break;
 
+    case SYS_MMAP:
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      get_user (&arg2, (uint32_t *) f->esp + 2 );
+      f->eax = sys_mmap ((int)arg1, (void *)arg2);
+      break;
+    case SYS_MUNMAP:
+      get_user (&arg1, (uint32_t *) f->esp + 1 );
+      sys_munmap ((mapid_t)arg1);
+      break;
     /* invalid syscall number */
     default:
       sys_exit(-1);
@@ -349,6 +368,93 @@ sys_remove (const char *file)
 
   return success;
 }
+
+mapid_t
+sys_mmap (int fd, void *addr)
+{
+  struct thread *t = thread_current ();
+
+  // 1. Check for invalid fd, null address, or non-page-aligned address.
+  if (fd < 2 || addr == NULL || pg_ofs(addr) != 0)
+    return -1;
+
+  // 2. Get file from fd and reopen it to create an independent reference.
+  // (Closing or deleting original fd's file shouldn't affect this mmap.)
+  struct file *file = fd_to_file (fd);
+  if (file == NULL)
+    return -1;
+
+  struct file *reopened_file = file_reopen(file);
+  if (reopened_file == NULL)
+    return -1;
+
+  // 3. Check file length.
+  off_t length = file_length(reopened_file);
+  if (length == 0)
+  {
+    file_close(reopened_file);
+    return -1;
+  }
+
+  // 4. Check for overlap with existing pages.
+  for (off_t offset = 0; offset < length; offset += PGSIZE)
+  {
+    if (spt_lookup(&t->s_page_table, addr + offset) != NULL)
+    {
+      file_close(reopened_file);
+      return -1;
+    }
+  }
+
+  // Create a new mmap_file struct
+  struct mmap_file *mmap = malloc(sizeof(struct mmap_file));
+  if (mmap == NULL)
+  {
+    file_close(reopened_file);
+    return -1;
+  }
+  mmap->mapping = mmap_get_next_id ();
+  mmap->file = reopened_file;
+  mmap->addr = addr;
+  list_push_back(&thread_current()->mmap_list, &mmap->elem);
+
+  // Lazy-load the pages
+  off_t ofs = 0;
+  uint8_t *upage = (uint8_t *) addr;
+  size_t read_bytes = length;
+  size_t zero_bytes = (PGSIZE - (length % PGSIZE)) % PGSIZE;
+
+  while (read_bytes > 0 || zero_bytes > 0)
+  {
+    uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    struct spt_entry *spte = spt_add_lazy_page (&t->s_page_table, reopened_file, ofs, upage, page_read_bytes, page_zero_bytes, true);
+    if (spte == NULL)
+      return -1;
+    spte->mmap = true;
+
+    // Advance to next page
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    ofs += PGSIZE;
+    upage += PGSIZE;
+  }
+
+  return mmap->mapping;
+}
+
+void
+sys_munmap (mapid_t mapping)
+{
+  struct thread *t = thread_current ();
+  struct mmap_file *mmap = mmap_get_from_mapid (&t->mmap_list, mapping);
+  if (mmap == NULL) return;
+
+  mmap_unmap_and_flush (t, mmap);
+}
+
+
 
 
 void touch_ptr (uint8_t *uaddr);

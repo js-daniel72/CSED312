@@ -140,21 +140,36 @@ evict_frame (void)
           // 1. Pick a frame to evict (done)
           else
             {
+              struct spt_entry *spte = spt_lookup (&f->owner->s_page_table, f->uaddr);
+              ASSERT (spte != NULL);
+
               // Pin the frame to prevent other threads from evicting it
               // while we are doing I/O.
               f->pinned = true;
 
-              // 2. Swap out contents into swap table
-              size_t swap_index = swap_out (f->kaddr);
-              
-              // 3. Unlink spte - frame, and link spte - swap (free frame in the process)
-              struct spt_entry *spte = spt_lookup (&f->owner->s_page_table, f->uaddr);
-              ASSERT (spte != NULL);
-              spte->status = PAGE_SWAP;
-              spte->swap_index = swap_index;
-              spte->frame = NULL;
+              if (spte->mmap)
+              {
+                // For mmaped pages, write back if dirty
+                if (pagedir_is_dirty (f->owner->pagedir, f->uaddr))
+                {
+                  filesys_lock_acquire (__func__);
+                  file_seek (spte->file, spte->offset);
+                  file_write (spte->file, f->kaddr, spte->read_bytes);
+                  filesys_lock_release (__func__);
+                }
+                spte->status = PAGE_LAZY;
 
-              // 3. Unmap the page from the page table and free the frame.
+              }
+              else
+              {
+                // For other pages, swap out
+                size_t swap_index = swap_out (f->kaddr);
+                spte->status = PAGE_SWAP;
+                spte->swap_index = swap_index;
+              }
+              
+              // Unmap the page from the page table and free the frame.
+              spte->frame = NULL;
               pagedir_clear_page (f->owner->pagedir, f->uaddr);
               palloc_free_page (f->kaddr);
               frame_free (f);

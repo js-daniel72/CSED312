@@ -18,6 +18,8 @@
 #include "userprog/fd.h"
 #include "vm/frame.h"
 #include "vm/spt.h"
+#include "vm/swap.h"
+#include "vm/mmap.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -688,11 +690,22 @@ process_cleanup (int exit_status)
   }
 
   fd_table_destroy (&cur->fd_table);
-  
-  #ifdef VM
-  //  spt_destroy (&cur->s_page_table);
-  #endif
-  
+
+#ifdef VM
+  // Flush all mmap’d regions on exit, even if user didn’t call munmap.
+  // Do this before destroying the SPT and page directory.
+  for (struct list_elem *e = list_begin(&cur->mmap_list); e != list_end(&cur->mmap_list); )
+  {
+    struct mmap_file *m = list_entry (e, struct mmap_file, elem);
+    e = list_next(e);
+
+    mmap_unmap_and_flush (cur, m);
+  }
+
+  // Now destroy the supplemental page table
+  hash_destroy (&cur->s_page_table, spt_destroy_entry);
+#endif
+
   // Wake up parent, then become a zombie
   sema_up(&cur->wait_sema);
   sema_down(&cur->zombie_sema);
