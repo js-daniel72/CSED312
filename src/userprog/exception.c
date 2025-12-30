@@ -188,6 +188,7 @@ page_fault (struct intr_frame *f)
   #endif
 }
 
+#ifdef VM
 static void
 page_fault_handler (struct intr_frame *f, void *fault_addr, bool not_present, bool write, bool user)
 {
@@ -200,7 +201,8 @@ page_fault_handler (struct intr_frame *f, void *fault_addr, bool not_present, bo
 
   void *esp = user ? f->esp : t->esp;
   struct spt_entry *spte = spt_lookup (&t->s_page_table, upage);
-  
+
+
   // If no spte, it's either stack growth, or invalid access.
   if (spte == NULL) {
     if (!((PHYS_BASE - MAX_STACK_SIZE) <= fault_addr && 
@@ -239,3 +241,4 @@ page_fault_handler (struct intr_frame *f, void *fault_addr, bool not_present, bo
   }
   return;
 }
+#endif
